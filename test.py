@@ -1,14 +1,17 @@
+
 import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date, timedelta
+import io
 
 # -------------------------------------------------------------
-# 🎯 Ρυθμίσεις
+# 🎯 Ρυθμίσεις Smoobu API
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("📊 Smoobu Reservations Dashboard")
 
+# 💡 Μόνιμο API key & Apartment ID
 API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 APARTMENT_ID = 750921
 
@@ -81,7 +84,7 @@ def price_without_tax(price: float, vat: float = 0.13) -> float:
 
 
 # -------------------------------------------------------------
-# 🧱 Δημιουργία DataFrame κρατήσεων
+# 🧱 Δημιουργία DataFrame
 # -------------------------------------------------------------
 rows = []
 for b in all_bookings:
@@ -115,15 +118,15 @@ for b in all_bookings:
             "ID": b.get("id"),
             "Apartment": apt.get("name"),
             "Guest Name": b.get("guestName") or b.get("guest-name"),
-            "Arrival": arrival_dt.strftime("%Y-%m-%d"),
-            "Departure": departure_dt.strftime("%Y-%m-%d"),
+            "Arrival": arrival_str,
+            "Departure": departure_str,
             "Days": days,
             "Platform": platform,
             "Guests": guests,
-            "Total Price": f"{round(price, 2):.2f} €",
-            "Booking Fee": f"{fee:.2f} €",
-            "Price Without Tax": f"{price_wo_tax:.2f} €",
-            "Owner Profit": f"{owner_profit:.2f} €"
+            "Total Price (€)": round(price, 2),
+            "Booking Fee (€)": fee,
+            "Price Without Tax (€)": price_wo_tax,
+            "Owner Profit (€)": owner_profit
         })
 
 if not rows:
@@ -131,7 +134,8 @@ if not rows:
     st.stop()
 
 df = pd.DataFrame(rows)
-df["Month"] = pd.to_datetime(df["Arrival"]).dt.month
+df["Arrival"] = pd.to_datetime(df["Arrival"])
+df["Month"] = df["Arrival"].dt.month
 
 months_el = {
     1: "Ιανουάριος", 2: "Φεβρουάριος", 3: "Μάρτιος", 4: "Απρίλιος",
@@ -141,7 +145,7 @@ months_el = {
 df["Month Name"] = df["Month"].map(months_el)
 
 # -------------------------------------------------------------
-# Φίλτρο μήνα (sidebar)
+# 📊 Φίλτρο για μήνα (sidebar)
 # -------------------------------------------------------------
 st.sidebar.header("📅 Επιλογή Μήνα")
 month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in sorted(months_el.keys())]
@@ -155,19 +159,20 @@ else:
 filtered_df = filtered_df.sort_values(["Month", "Apartment", "Arrival"])
 
 # -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
+# 📋 Εμφάνιση κρατήσεων
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_month})")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------
-# Καταχώρηση Εξόδων
+# 💸 Καταχώρηση Εξόδων (στην κύρια σελίδα)
 # -------------------------------------------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 
+# Δημιουργούμε session state για αποθήκευση εξόδων
 if "expenses_df" not in st.session_state:
     st.session_state["expenses_df"] = pd.DataFrame(
-        columns=["Date", "Accommodation", "Category", "Amount", "Description"]
+        columns=["Date", "Accommodation", "Category", "Amount (€)", "Description"]
     )
 
 with st.form("expenses_form", clear_on_submit=True):
@@ -178,7 +183,7 @@ with st.form("expenses_form", clear_on_submit=True):
         exp_accommodation = st.selectbox("Κατάλυμα", ["Kalista"])
     with col3:
         exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
-    exp_amount = st.number_input("Ποσό", min_value=0.0, format="%.2f")
+    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
     exp_description = st.text_input("Περιγραφή (προαιρετική)")
     submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
 
@@ -187,34 +192,28 @@ with st.form("expenses_form", clear_on_submit=True):
             "Date": exp_date.strftime("%Y-%m-%d"),
             "Accommodation": exp_accommodation,
             "Category": exp_category,
-            "Amount": f"{exp_amount:.2f} €",
+            "Amount (€)": round(exp_amount, 2),
             "Description": exp_description,
         }])
         st.session_state["expenses_df"] = pd.concat(
             [st.session_state["expenses_df"], new_row], ignore_index=True
         )
+        st.success("✅ Το έξοδο προστέθηκε!")
 
-# -------------------------------------------------------------
-# Εμφάνιση εξόδων με κουμπί διαγραφής χωρίς rerun
-# -------------------------------------------------------------
+# Εμφάνιση εξόδων κάτω από τη φόρμα
 st.subheader("💸 Καταχωρημένα Έξοδα")
+st.dataframe(st.session_state["expenses_df"], use_container_width=True, hide_index=True)
 
-def display_expenses():
-    if st.session_state["expenses_df"].empty:
-        st.info("Δεν υπάρχουν καταχωρημένα έξοδα.")
-        return
+# -------------------------------------------------------------
+# 📊 Σύνολα
+# -------------------------------------------------------------
+st.subheader("📈 Σύνολα ανά μήνα & πλατφόρμα")
+summary = (
+    df.groupby(["Month Name", "Platform"])[["Total Price (€)", "Booking Fee (€)", "Owner Profit (€)"]]
+    .sum()
+    .round(2)
+    .reset_index()
+)
+st.dataframe(summary, use_container_width=True, hide_index=True)
 
-    container = st.container()
-    for i, row in st.session_state["expenses_df"].iterrows():
-        cols = container.columns([1,1,1,1,2,1])
-        cols[0].write(row["Date"])
-        cols[1].write(row["Accommodation"])
-        cols[2].write(row["Category"])
-        cols[3].write(row["Amount"])
-        cols[4].write(row["Description"])
-        if cols[5].button("🗑️", key=f"del_{i}"):
-            st.session_state["expenses_df"].drop(i, inplace=True)
-            st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            break  # σταματάμε το loop για να αποφύγουμε conflict
 
-display_expenses()
