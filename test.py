@@ -5,13 +5,13 @@ from datetime import datetime, date, timedelta
 import io
 
 # -------------------------------------------------------------
-# 🎯 Smoobu API Ρυθμίσεις
+# 🎯 Ρυθμίσεις Smoobu API
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("📊 Smoobu Reservations Dashboard")
 
 # 💡 Βάλε το δικό σου API key εδώ ΜΟΝΙΜΑ
-API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"  # ⚠️ Αν είναι αληθινό, κράτησέ το ιδιωτικό
+API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R" 
 APARTMENT_ID = 750921
 
 headers = {
@@ -138,28 +138,34 @@ if not rows:
 df = pd.DataFrame(rows)
 df["Arrival"] = pd.to_datetime(df["Arrival"])
 df["Month"] = df["Arrival"].dt.month
-df["Month Name"] = df["Arrival"].dt.strftime("%B")
+
+# ➕ Ελληνικά ονόματα μηνών
+months_el = {
+    1: "Ιανουάριος", 2: "Φεβρουάριος", 3: "Μάρτιος", 4: "Απρίλιος",
+    5: "Μάιος", 6: "Ιούνιος", 7: "Ιούλιος", 8: "Αύγουστος",
+    9: "Σεπτέμβριος", 10: "Οκτώβριος", 11: "Νοέμβριος", 12: "Δεκέμβριος"
+}
+df["Month Name"] = df["Month"].map(months_el)
 
 # -------------------------------------------------------------
-# 📊 Φιλτράρισμα / Ταξινόμηση
+# 📊 Φίλτρο μόνο για μήνες
 # -------------------------------------------------------------
-st.sidebar.header("⚙️ Επιλογές Φιλτραρίσματος")
-selected_months = st.sidebar.multiselect(
-    "Επίλεξε μήνες", sorted(df["Month Name"].unique()), default=sorted(df["Month Name"].unique())
-)
-selected_platforms = st.sidebar.multiselect(
-    "Επίλεξε πλατφόρμες", sorted(df["Platform"].unique()), default=sorted(df["Platform"].unique())
-)
+st.sidebar.header("📅 Επιλογή Μήνα")
+month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in sorted(months_el.keys())]
 
-filtered_df = df[
-    df["Month Name"].isin(selected_months) &
-    df["Platform"].isin(selected_platforms)
-].sort_values(["Month", "Apartment", "Arrival"])
+selected_month = st.sidebar.selectbox("Διάλεξε μήνα", month_options)
+
+if selected_month != "Όλοι οι μήνες":
+    filtered_df = df[df["Month Name"] == selected_month]
+else:
+    filtered_df = df.copy()
+
+filtered_df = filtered_df.sort_values(["Month", "Apartment", "Arrival"])
 
 # -------------------------------------------------------------
 # 📈 Εμφάνιση δεδομένων
 # -------------------------------------------------------------
-st.subheader("📅 Κρατήσεις")
+st.subheader(f"📅 Κρατήσεις ({selected_month})")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------
@@ -167,8 +173,7 @@ st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 # -------------------------------------------------------------
 st.subheader("📊 Σύνολα ανά μήνα & πλατφόρμα")
 summary = (
-    filtered_df
-    .groupby(["Month Name", "Platform"])[["Total Price (€)", "Booking Fee (€)", "Owner Profit (€)"]]
+    df.groupby(["Month Name", "Platform"])[["Total Price (€)", "Booking Fee (€)", "Owner Profit (€)"]]
     .sum()
     .round(2)
     .reset_index()
