@@ -34,7 +34,7 @@ else:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# 📅 Ημερομηνίες για κατέβασμα νέων κρατήσεων
+# 📅 Ημερομηνίες για νέες κρατήσεις
 # -------------------------------------------------------------
 if not old_bookings_df.empty:
     last_saved_date = old_bookings_df["Arrival"].max()
@@ -101,7 +101,13 @@ def price_without_tax(price: float, vat: float = 0.13) -> float:
     return round(price / (1 + vat), 2)
 
 rows = []
+existing_ids = set(old_bookings_df.get("ID", []))
+
 for b in new_bookings:
+    booking_id = b.get("id")
+    if not booking_id or booking_id in existing_ids:
+        continue  # skip αν υπάρχει ήδη
+
     arrival_str = b.get("arrival")
     departure_str = b.get("departure")
     if not arrival_str or not departure_str:
@@ -111,13 +117,13 @@ for b in new_bookings:
         departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
     except Exception:
         continue
+
     apt = b.get("apartment", {}) or {}
     ch = b.get("channel", {}) or {}
     platform = ch.get("name") or "Direct booking"
 
-    price = float(b.get("price") or 0)
-
-    # 🔹 Expedia fix: ανεξαρτήτως κεφαλαίων/κενών
+    # Καθαρισμός τιμής και Expedia fix
+    price = float(str(b.get("price") or 0).replace("€","").replace(",",""))
     if "expedia" in platform.strip().lower():
         price = round(price / 0.82, 2)
 
@@ -130,7 +136,7 @@ for b in new_bookings:
     owner_profit = round(price - fee, 2)
 
     rows.append({
-        "ID": b.get("id"),
+        "ID": booking_id,
         "Apartment": apt.get("name"),
         "Guest Name": b.get("guestName") or b.get("guest-name"),
         "Arrival": arrival_dt.strftime("%Y-%m-%d"),
