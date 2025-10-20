@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date, timedelta
-import io
 
 # -------------------------------------------------------------
 # 🎯 Ρυθμίσεις
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
-st.title("📊 Smoobu Reservations Dashboard")
+st.title("📊 Smoobu Reservations Dashboard (2025 μέχρι χθες)")
 
 API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 APARTMENT_ID = 750921
@@ -121,10 +120,10 @@ for b in all_bookings:
             "Days": days,
             "Platform": platform,
             "Guests": guests,
-            "Total Price": round(price, 2),
-            "Booking Fee": fee,
-            "Price Without Tax": price_wo_tax,
-            "Owner Profit": owner_profit
+            "Total Price": f"{round(price, 2):.2f} €",
+            "Booking Fee": f"{fee:.2f} €",
+            "Price Without Tax": f"{price_wo_tax:.2f} €",
+            "Owner Profit": f"{owner_profit:.2f} €"
         })
 
 if not rows:
@@ -154,13 +153,6 @@ else:
     filtered_df = df.copy()
 
 filtered_df = filtered_df.sort_values(["Month", "Apartment", "Arrival"])
-
-# -------------------------------------------------------------
-# Μετατροπή ποσών σε μορφή με €
-# -------------------------------------------------------------
-money_columns = ["Total Price", "Booking Fee", "Price Without Tax", "Owner Profit"]
-for col in money_columns:
-    filtered_df[col] = filtered_df[col].apply(lambda x: f"{x:.2f} €")
 
 # -------------------------------------------------------------
 # Εμφάνιση κρατήσεων
@@ -195,40 +187,14 @@ with st.form("expenses_form", clear_on_submit=True):
             "Date": exp_date.strftime("%Y-%m-%d"),
             "Accommodation": exp_accommodation,
             "Category": exp_category,
-            "Amount": round(exp_amount, 2),
+            "Amount": f"{exp_amount:.2f} €",  # εμφανίζεται με € αμέσως
             "Description": exp_description,
         }])
         st.session_state["expenses_df"] = pd.concat(
             [st.session_state["expenses_df"], new_row], ignore_index=True
         )
 
-# Μετατροπή Amount σε μορφή με €
-if not st.session_state["expenses_df"].empty:
-    st.session_state["expenses_df"]["Amount"] = st.session_state["expenses_df"]["Amount"].apply(lambda x: f"{x:.2f} €")
-
 # Εμφάνιση εξόδων
 st.subheader("💸 Καταχωρημένα Έξοδα")
 st.dataframe(st.session_state["expenses_df"], use_container_width=True, hide_index=True)
 
-# -------------------------------------------------------------
-# Αυτόματη αποθήκευση Excel στον ίδιο φάκελο με το script
-# -------------------------------------------------------------
-def save_excel():
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        # Πριν γράψουμε στο Excel, αφαιρούμε το € για να είναι αριθμοί
-        df_to_excel = filtered_df.copy()
-        for col in money_columns:
-            df_to_excel[col] = df_to_excel[col].str.replace(" €", "").astype(float)
-        df_to_excel.to_excel(writer, index=False, sheet_name="Κρατήσεις")
-        
-        expenses_to_excel = st.session_state["expenses_df"].copy()
-        expenses_to_excel["Amount"] = expenses_to_excel["Amount"].str.replace(" €", "").astype(float)
-        expenses_to_excel.to_excel(writer, index=False, sheet_name="Έξοδα")
-    
-    path = "airstay_reservations.xlsx"
-    with open(path, "wb") as f:
-        f.write(output.getvalue())
-
-# Αποθήκευση Excel αυτόματα
-save_excel()
