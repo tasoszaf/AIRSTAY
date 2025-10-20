@@ -171,8 +171,51 @@ def parse_amount_euro(value):
         return 0.0
 
 # -------------------------------------------------------------
-# Καταχώρηση εξόδων με μήνα
+# Υπολογισμός συνολικών ανά μήνα
 # -------------------------------------------------------------
+expenses_df = st.session_state["expenses_df"].copy()
+if "Month" not in expenses_df.columns or expenses_df.empty:
+    expenses_df["Month"] = pd.Series(dtype=int)
+    expenses_df["Amount"] = pd.Series(dtype=float)
+
+total_price_by_month = filtered_df.groupby("Month")["Total Price"].apply(lambda x: x.apply(parse_amount_euro).sum())
+total_owner_profit_by_month = filtered_df.groupby("Month")["Owner Profit"].apply(lambda x: x.apply(parse_amount_euro).sum())
+total_price_wo_tax_by_month = filtered_df.groupby("Month")["Price Without Tax"].apply(lambda x: x.apply(parse_amount_euro).sum())
+total_expenses_by_month = expenses_df.groupby("Month")["Amount"].apply(lambda x: x.apply(parse_amount_euro).sum())
+
+net_owner_profit_by_month = total_owner_profit_by_month.subtract(total_expenses_by_month, fill_value=0)
+net_price_wo_tax_by_month = total_price_wo_tax_by_month.subtract(total_expenses_by_month, fill_value=0)
+
+if selected_month != "Όλοι οι μήνες":
+    month_index = [k for k,v in months_el.items() if v==selected_month][0]
+    total_price = total_price_by_month.get(month_index,0)
+    total_expenses = total_expenses_by_month.get(month_index,0)
+    total_owner_profit_after_expenses = net_owner_profit_by_month.get(month_index,0)
+    total_price_wo_tax_after_expenses = net_price_wo_tax_by_month.get(month_index,0)
+else:
+    total_price = total_price_by_month.sum()
+    total_expenses = total_expenses_by_month.sum()
+    total_owner_profit_after_expenses = net_owner_profit_by_month.sum()
+    total_price_wo_tax_after_expenses = net_price_wo_tax_by_month.sum()
+
+# ---------------------------
+# 1️⃣ Κουτάκια με συνολικά
+# ---------------------------
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
+col2.metric("🧾 Συνολικές Δαπάνες", f"{total_expenses:.2f} €")
+col3.metric("📊 Καθαρό Κέρδος Ιδιοκτήτη", f"{total_owner_profit_after_expenses:.2f} €")
+col4.metric("💵 Τιμή χωρίς ΦΠΑ μετά έξοδα", f"{total_price_wo_tax_after_expenses:.2f} €")
+
+# ---------------------------
+# 2️⃣ Πίνακας κρατήσεων
+# ---------------------------
+st.subheader(f"📅 Κρατήσεις ({selected_month})")
+st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
+# ---------------------------
+# 3️⃣ Καταχώρηση & εμφάνιση εξόδων (κάτω-κάτω)
+# ---------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
     col1, col2, col3 = st.columns(3)
@@ -199,58 +242,11 @@ with st.form("expenses_form", clear_on_submit=True):
             [st.session_state["expenses_df"], new_row], ignore_index=True
         )
 
-# -------------------------------------------------------------
-# Υπολογισμός συνολικών ανά μήνα
-# -------------------------------------------------------------
-expenses_df = st.session_state["expenses_df"].copy()
-
-total_price_by_month = filtered_df.groupby("Month")["Total Price"].apply(lambda x: x.apply(parse_amount_euro).sum())
-total_owner_profit_by_month = filtered_df.groupby("Month")["Owner Profit"].apply(lambda x: x.apply(parse_amount_euro).sum())
-total_price_wo_tax_by_month = filtered_df.groupby("Month")["Price Without Tax"].apply(lambda x: x.apply(parse_amount_euro).sum())
-
-total_expenses_by_month = expenses_df.groupby("Month")["Amount"].apply(lambda x: x.apply(parse_amount_euro).sum())
-
-net_owner_profit_by_month = total_owner_profit_by_month.subtract(total_expenses_by_month, fill_value=0)
-net_price_wo_tax_by_month = total_price_wo_tax_by_month.subtract(total_expenses_by_month, fill_value=0)
-
-# Σύνολα για εμφανιζόμενο μήνα ή όλους
-if selected_month != "Όλοι οι μήνες":
-    month_index = [k for k,v in months_el.items() if v==selected_month][0]
-    total_price = total_price_by_month.get(month_index,0)
-    total_expenses = total_expenses_by_month.get(month_index,0)
-    total_owner_profit_after_expenses = net_owner_profit_by_month.get(month_index,0)
-    total_price_wo_tax_after_expenses = net_price_wo_tax_by_month.get(month_index,0)
-else:
-    total_price = total_price_by_month.sum()
-    total_expenses = total_expenses_by_month.sum()
-    total_owner_profit_after_expenses = net_owner_profit_by_month.sum()
-    total_price_wo_tax_after_expenses = net_price_wo_tax_by_month.sum()
-
-# -------------------------------------------------------------
-# Εμφάνιση συνολικών σε κουτάκια
-# -------------------------------------------------------------
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
-col2.metric("🧾 Συνολικές Δαπάνες", f"{total_expenses:.2f} €")
-col3.metric("📊 Καθαρό Κέρδος Ιδιοκτήτη", f"{total_owner_profit_after_expenses:.2f} €")
-col4.metric("💵 Τιμή χωρίς ΦΠΑ μετά έξοδα", f"{total_price_wo_tax_after_expenses:.2f} €")
-
-# -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
-# -------------------------------------------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_month})")
-st.dataframe(filtered_df, use_container_width=True, hide_index=True)
-
-# -------------------------------------------------------------
-# Εμφάνιση εξόδων με κουμπί διαγραφής
-# -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
-
 def display_expenses():
     if st.session_state["expenses_df"].empty:
         st.info("Δεν υπάρχουν καταχωρημένα έξοδα.")
         return
-
     container = st.container()
     for i, row in st.session_state["expenses_df"].iterrows():
         cols = container.columns([1,1,1,1,2,1])
@@ -262,6 +258,6 @@ def display_expenses():
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            break  # σταματάμε loop για αποφυγή conflict
+            break
 
 display_expenses()
