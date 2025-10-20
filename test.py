@@ -154,6 +154,12 @@ for b in all_bookings:
 df = pd.DataFrame(rows)
 
 # -------------------------------------------------------------
+# 🔹 Εξασφάλιση ότι υπάρχει η στήλη Month
+# -------------------------------------------------------------
+if "Month" not in df.columns:
+    df["Month"] = pd.to_datetime(df["Arrival"]).dt.month
+
+# -------------------------------------------------------------
 # 🔹 Sidebar φίλτρα
 # -------------------------------------------------------------
 st.sidebar.header("Φίλτρα")
@@ -166,7 +172,7 @@ group_options = ["Όλα"] + list(groups.keys())
 selected_group = st.sidebar.selectbox("Διάλεξε Κατάλυμα/Group", group_options)
 
 filtered_df = df.copy()
-if selected_month != "Όλοι οι μήνες":
+if selected_month != "Όλοι οι μήνες" and "Month" in filtered_df.columns:
     month_index = [k for k,v in months_el.items() if v==selected_month][0]
     filtered_df = filtered_df[filtered_df["Month"]==month_index]
 if selected_group != "Όλα":
@@ -183,6 +189,8 @@ if "expenses_df" not in st.session_state:
         st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 expenses_df = st.session_state["expenses_df"].copy()
+if "Month" not in expenses_df.columns:
+    expenses_df["Month"] = pd.to_datetime(expenses_df["Date"]).dt.month
 filtered_expenses = expenses_df.copy()
 if selected_month != "Όλοι οι μήνες":
     month_index = [k for k,v in months_el.items() if v==selected_month][0]
