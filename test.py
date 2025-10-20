@@ -164,9 +164,8 @@ if "expenses_df" not in st.session_state:
 # Συνάρτηση parse για € amounts
 # -------------------------------------------------------------
 def parse_amount_euro(value):
-    """Μετατρέπει string '123.45 €' σε float 123.45"""
     try:
-        return float(str(value).replace(" €", ""))
+        return float(str(value).replace(" €",""))
     except:
         return 0.0
 
@@ -180,32 +179,27 @@ if "Month" not in expenses_df.columns or expenses_df.empty:
 
 total_price_by_month = filtered_df.groupby("Month")["Total Price"].apply(lambda x: x.apply(parse_amount_euro).sum())
 total_owner_profit_by_month = filtered_df.groupby("Month")["Owner Profit"].apply(lambda x: x.apply(parse_amount_euro).sum())
-total_price_wo_tax_by_month = filtered_df.groupby("Month")["Price Without Tax"].apply(lambda x: x.apply(parse_amount_euro).sum())
 total_expenses_by_month = expenses_df.groupby("Month")["Amount"].apply(lambda x: x.apply(parse_amount_euro).sum())
 
+# Καθαρό κέρδος ιδιοκτήτη ανά μήνα
 net_owner_profit_by_month = total_owner_profit_by_month.subtract(total_expenses_by_month, fill_value=0)
-net_price_wo_tax_by_month = total_price_wo_tax_by_month.subtract(total_expenses_by_month, fill_value=0)
 
 if selected_month != "Όλοι οι μήνες":
     month_index = [k for k,v in months_el.items() if v==selected_month][0]
     total_price = total_price_by_month.get(month_index,0)
     total_expenses = total_expenses_by_month.get(month_index,0)
     total_owner_profit_after_expenses = net_owner_profit_by_month.get(month_index,0)
-    total_price_wo_tax_after_expenses = net_price_wo_tax_by_month.get(month_index,0)
 else:
     total_price = total_price_by_month.sum()
     total_expenses = total_expenses_by_month.sum()
     total_owner_profit_after_expenses = net_owner_profit_by_month.sum()
-    total_price_wo_tax_after_expenses = net_price_wo_tax_by_month.sum()
 
 # ---------------------------
-# 1️⃣ Κουτάκια με συνολικά
+# 1️⃣ Κουτάκια με συνολικά (μόνο δύο)
 # ---------------------------
-col1, col2, col3, col4 = st.columns(4)
+col1, col2 = st.columns(2)
 col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
-col2.metric("🧾 Συνολικές Δαπάνες", f"{total_expenses:.2f} €")
-col3.metric("📊 Καθαρό Κέρδος Ιδιοκτήτη", f"{total_owner_profit_after_expenses:.2f} €")
-col4.metric("💵 Τιμή χωρίς ΦΠΑ μετά έξοδα", f"{total_price_wo_tax_after_expenses:.2f} €")
+col2.metric("📊 Συνολικό Κέρδος Ιδιοκτήτη", f"{total_owner_profit_after_expenses:.2f} €")
 
 # ---------------------------
 # 2️⃣ Πίνακας κρατήσεων
