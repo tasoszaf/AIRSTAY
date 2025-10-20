@@ -175,7 +175,7 @@ with st.form("expenses_form", clear_on_submit=True):
     with col1:
         exp_date = st.date_input("Ημερομηνία", value=date.today())
     with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", ["Kalista"])
+        exp_accommodation = st.selectbox("Κατάλυμα", ["kalista"])
     with col3:
         exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
     exp_amount = st.number_input("Ποσό", min_value=0.0, format="%.2f")
@@ -194,25 +194,23 @@ with st.form("expenses_form", clear_on_submit=True):
             [st.session_state["expenses_df"], new_row], ignore_index=True
         )
 
-# Εμφάνιση εξόδων
+# -------------------------------------------------------------
+# Εμφάνιση εξόδων με κουμπί διαγραφής ανά γραμμή
+# -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
-st.dataframe(st.session_state["expenses_df"], use_container_width=True, hide_index=True)
 
-# -------------------------------------------------------------
-# Διαγραφή εξόδου
-# -------------------------------------------------------------
 if not st.session_state["expenses_df"].empty:
-    st.subheader("🗑️ Διαγραφή εξόδου")
+    display_df = st.session_state["expenses_df"].copy()
     
-    # Δημιουργούμε λίστα για επιλογή με index και περιγραφή
-    options = st.session_state["expenses_df"].apply(
-        lambda row: f"{row['Date']} | {row['Category']} | {row['Amount']} | {row['Description']}", axis=1
-    )
-    selected_expense = st.selectbox("Διάλεξε έξοδο για διαγραφή", options)
-    
-    if st.button("🗑️ Διαγραφή"):
-        # Βρίσκουμε το index της επιλεγμένης εγγραφής
-        idx = options[options == selected_expense].index[0]
-        st.session_state["expenses_df"].drop(idx, inplace=True)
-        st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-        st.success("✔️ Το έξοδο διαγράφηκε επιτυχώς!")
+    for i, row in display_df.iterrows():
+        cols = st.columns([1,1,1,1,2,1])  # Date, Accommodation, Category, Amount, Description, Κουμπί
+        cols[0].write(row["Date"])
+        cols[1].write(row["Accommodation"])
+        cols[2].write(row["Category"])
+        cols[3].write(row["Amount"])
+        cols[4].write(row["Description"])
+        
+        if cols[5].button("🗑️", key=f"del_{i}"):
+            st.session_state["expenses_df"].drop(i, inplace=True)
+            st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
+            st.experimental_rerun()  # ανανεώνει τον πίνακα
