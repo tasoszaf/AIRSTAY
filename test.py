@@ -175,7 +175,7 @@ with st.form("expenses_form", clear_on_submit=True):
     with col1:
         exp_date = st.date_input("Ημερομηνία", value=date.today())
     with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", ["kalista"])
+        exp_accommodation = st.selectbox("Κατάλυμα", ["Kalista"])
     with col3:
         exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
     exp_amount = st.number_input("Ποσό", min_value=0.0, format="%.2f")
@@ -187,7 +187,7 @@ with st.form("expenses_form", clear_on_submit=True):
             "Date": exp_date.strftime("%Y-%m-%d"),
             "Accommodation": exp_accommodation,
             "Category": exp_category,
-            "Amount": f"{exp_amount:.2f} €",  # εμφανίζεται με € αμέσως
+            "Amount": f"{exp_amount:.2f} €",
             "Description": exp_description,
         }])
         st.session_state["expenses_df"] = pd.concat(
@@ -195,15 +195,13 @@ with st.form("expenses_form", clear_on_submit=True):
         )
 
 # -------------------------------------------------------------
-# Εμφάνιση εξόδων με κουμπί διαγραφής ανά γραμμή
+# Εμφάνιση εξόδων με κουμπί διαγραφής ανά γραμμή χωρίς rerun
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
 if not st.session_state["expenses_df"].empty:
-    display_df = st.session_state["expenses_df"].copy()
-    
-    for i, row in display_df.iterrows():
-        cols = st.columns([1,1,1,1,2,1])  # Date, Accommodation, Category, Amount, Description, Κουμπί
+    for i, row in st.session_state["expenses_df"].iterrows():
+        cols = st.columns([1,1,1,1,2,1])
         cols[0].write(row["Date"])
         cols[1].write(row["Accommodation"])
         cols[2].write(row["Category"])
@@ -213,4 +211,4 @@ if not st.session_state["expenses_df"].empty:
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            st.experimental_rerun()  # ανανεώνει τον πίνακα
+            st.experimental_rerun()  # Αν θέλεις, μπορείς να σχολιάσεις αν δημιουργεί πρόβλημα
