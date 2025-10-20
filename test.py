@@ -176,7 +176,7 @@ with st.form("expenses_form", clear_on_submit=True):
     with col1:
         exp_date = st.date_input("Ημερομηνία", value=date.today())
     with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", ["Κalista"])
+        exp_accommodation = st.selectbox("Κατάλυμα", ["Kalista"])
     with col3:
         exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
     exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
@@ -194,23 +194,23 @@ with st.form("expenses_form", clear_on_submit=True):
         st.session_state["expenses_df"] = pd.concat(
             [st.session_state["expenses_df"], new_row], ignore_index=True
         )
-        st.success("✅ Το έξοδο προστέθηκε!")
 
 # Εμφάνιση εξόδων
 st.subheader("💸 Καταχωρημένα Έξοδα")
 st.dataframe(st.session_state["expenses_df"], use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------
-# Αυτόματη αποθήκευση Excel
+# Αυτόματη αποθήκευση Excel στο Desktop χωρίς μήνυμα
 # -------------------------------------------------------------
 def save_excel():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         filtered_df.to_excel(writer, index=False, sheet_name="Κρατήσεις")
         st.session_state["expenses_df"].to_excel(writer, index=False, sheet_name="Έξοδα")
-    with open("reservations_and_expenses.xlsx", "wb") as f:
+    # Αποθήκευση απευθείας στο Desktop
+    path = "/Users/anastasioszafeiriou/Desktop/airstay_reservations.xlsx"
+    with open(path, "wb") as f:
         f.write(output.getvalue())
 
-# Κάθε φορά που τρέχει το app ή αλλάζει κάτι, αποθηκεύουμε Excel
+# Κάθε φορά που τρέχει ή ανανεώνεται το app, αποθηκεύουμε Excel
 save_excel()
-
