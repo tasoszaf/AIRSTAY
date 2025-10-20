@@ -11,49 +11,100 @@ st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
 
 API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
-APARTMENT_ID = 750921
-
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# 📅 Ημερομηνίες
+# 🏘️ Ορισμός Ομάδων Καταλυμάτων
 # -------------------------------------------------------------
-from_date = "2025-01-01"
-to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
-
-params = {
-    "from": from_date,
-    "to": to_date,
-    "apartmentId": APARTMENT_ID,
-    "excludeBlocked": "true",
-    "showCancellation": "true",
-    "page": 1,
-    "pageSize": 100,
+groups = {
+    "ZED": [1439913, 1439915, 1439917, 1439919, 1439921, 1439923, 1439925, 1439927, 
+             1439929, 1439931, 1439933, 1439935, 1439937, 1439939, 1439971, 1439973, 
+             1439975, 1439977, 1439979, 1439981, 1439983, 1439985],
+    "KOMOS": [2160281, 2160286, 2160291],
+    "CHELI": [2146456, 2146461],
+    "AKALI": [1713746],
+    "NAMI": [1275248],
+    "THRESH": [563628, 563631, 1200587, 563634, 563637, 563640, 563643],
+    "ZILEAN": [1756004, 1756007, 1756010, 1756013, 1756016, 1756019, 1756022, 1756025, 1756031],
+    "NAUTILUS": [563712, 563724, 563718, 563721, 563715, 563727],
+    "ANIVIA": [563703, 563706],
+    "ELISE": [563625, 1405415],
+    "ORIANNA": [1607131],
+    "KALISTA": [750921],
+    "JAAX": [2712218],
+    "FINIKAS": [2715193,2715198,2715203,2715208,2715213,
+                 2715218,2715223,2715228,2715233, 2715238,2715273]
 }
 
 # -------------------------------------------------------------
-# 📦 Ανάκτηση κρατήσεων
+# 🧭 Επιλογή Ομάδας (sidebar)
+# -------------------------------------------------------------
+st.sidebar.header("🏘️ Επιλογή Ομάδας Καταλυμάτων")
+selected_group = st.sidebar.selectbox("Διάλεξε ομάδα", list(groups.keys()))
+apartment_ids = groups[selected_group]
+
+# -------------------------------------------------------------
+# 📅 Δημιουργία λίστας μηνών για 2025
+# -------------------------------------------------------------
+def month_ranges(year: int):
+    ranges = []
+    for month in range(1, 13):
+        start = date(year, month, 1)
+        if month == 12:
+            end = date(year, 12, 31)
+        else:
+            end = date(year, month + 1, 1) - timedelta(days=1)
+        ranges.append((start, end))
+    return ranges
+
+year = 2025
+month_periods = month_ranges(year)
+
+# -------------------------------------------------------------
+# 📦 Ανάκτηση κρατήσεων ανά μήνα & apartment
 # -------------------------------------------------------------
 all_bookings = []
-while True:
-    try:
-        r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Σφάλμα σύνδεσης: {e}")
-        break
+progress = st.progress(0)
+step = 0
+total_steps = len(apartment_ids) * len(month_periods)
 
-    bookings = data.get("bookings", [])
-    if not bookings:
-        break
-    all_bookings.extend(bookings)
+for apt_id in apartment_ids:
+    for (from_dt, to_dt) in month_periods:
+        params = {
+            "from": from_dt.strftime("%Y-%m-%d"),
+            "to": to_dt.strftime("%Y-%m-%d"),
+            "apartmentId": apt_id,
+            "excludeBlocked": "true",
+            "showCancellation": "true",
+            "page": 1,
+            "pageSize": 100,
+        }
 
-    if data.get("page") and data.get("page") < data.get("page_count", 1):
-        params["page"] += 1
-    else:
-        break
+        while True:
+            try:
+                r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
+                r.raise_for_status()
+                data = r.json()
+            except requests.exceptions.RequestException as e:
+                st.error(f"❌ Σφάλμα ({apt_id}, {from_dt:%b}): {e}")
+                break
+
+            bookings = data.get("bookings", [])
+            if not bookings:
+                break
+            all_bookings.extend(bookings)
+
+            if data.get("page") and data.get("page") < data.get("page_count", 1):
+                params["page"] += 1
+            else:
+                break
+
+        step += 1
+        progress.progress(step / total_steps)
+
+progress.empty()
+st.success(f"✅ Φορτώθηκαν {len(all_bookings)} κρατήσεις για την ομάδα: {selected_group}")
 
 # -------------------------------------------------------------
 # 🧮 Υπολογισμοί
@@ -108,6 +159,7 @@ for b in all_bookings:
         rows.append({
             "ID": b.get("id"),
             "Apartment": apt.get("name"),
+            "Group": selected_group,
             "Guest Name": b.get("guestName") or b.get("guest-name"),
             "Arrival": arrival_dt.strftime("%Y-%m-%d"),
             "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -122,7 +174,7 @@ for b in all_bookings:
         })
 
 if not rows:
-    st.info(f"Δεν βρέθηκαν κρατήσεις για το διάστημα {from_date} έως {to_date}.")
+    st.info(f"Δεν βρέθηκαν κρατήσεις για την ομάδα {selected_group}.")
     st.stop()
 
 df = pd.DataFrame(rows)
@@ -137,20 +189,21 @@ months_el = {
     9: "Σεπτέμβριος", 10: "Οκτώβριος", 11: "Νοέμβριος", 12: "Δεκέμβριος"
 }
 
-month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in sorted(months_el.keys())]
-selected_month = st.sidebar.selectbox("Διάλεξε μήνα", month_options)
+month_options = [months_el[m] for m in sorted(months_el.keys())]
+selected_month = st.sidebar.selectbox("Διάλεξε μήνα", ["Όλοι οι μήνες"] + month_options)
 
 if selected_month != "Όλοι οι μήνες":
     month_index = [k for k,v in months_el.items() if v==selected_month][0]
     filtered_df = df[df["Month"]==month_index]
 else:
     filtered_df = df.copy()
+
 filtered_df = filtered_df.sort_values(["Month","Apartment","Arrival"])
 
 # -------------------------------------------------------------
 # Session state & Excel για έξοδα
 # -------------------------------------------------------------
-EXPENSES_FILE = "expenses.xlsx"
+EXPENSES_FILE = f"expenses_{selected_group}.xlsx"
 
 if "expenses_df" not in st.session_state:
     if os.path.exists(EXPENSES_FILE):
@@ -195,18 +248,18 @@ else:
 # 1️⃣ Κουτάκια με συνολικά (τρία)
 # ---------------------------
 col1, col2, col3 = st.columns(3)
-col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
+col1.metric(f"💰 Συνολική Τιμή Κρατήσεων ({selected_group})", f"{total_price:.2f} €")
 col2.metric("🧾 Συνολικά Έξοδα", f"{total_expenses:.2f} €")
 col3.metric("📊 Συνολικό Κέρδος Ιδιοκτήτη", f"{total_owner_profit_after_expenses:.2f} €")
 
 # ---------------------------
 # 2️⃣ Πίνακας κρατήσεων
 # ---------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_month})")
+st.subheader(f"📅 Κρατήσεις ({selected_month}) - {selected_group}")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 # ---------------------------
-# 3️⃣ Καταχώρηση & εμφάνιση εξόδων (κάτω-κάτω)
+# 3️⃣ Καταχώρηση & εμφάνιση εξόδων
 # ---------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -214,7 +267,7 @@ with st.form("expenses_form", clear_on_submit=True):
     with col1:
         exp_date = st.date_input("Ημερομηνία", value=date.today())
     with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", ["Kalista"])
+        exp_accommodation = st.selectbox("Κατάλυμα", sorted(df["Apartment"].unique()))
     with col3:
         exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
     exp_amount = st.number_input("Ποσό", min_value=0.0, format="%.2f")
@@ -231,7 +284,6 @@ with st.form("expenses_form", clear_on_submit=True):
             "Description": exp_description,
         }])
         st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
-        # Αυτόματη αποθήκευση σε Excel
         st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
 
 st.subheader("💸 Καταχωρημένα Έξοδα")
@@ -250,7 +302,6 @@ def display_expenses():
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            # Αυτόματη αποθήκευση μετά διαγραφή
             st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
             break
 
