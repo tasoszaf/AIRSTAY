@@ -118,7 +118,7 @@ for b in new_bookings:
     price = float(b.get("price") or 0)
 
     # 🔹 Αν η πλατφόρμα είναι Expedia, διαιρούμε με 0.82
-    if "Expedia" in platform.strip().lower():
+    if platform.strip().lower() == "expedia":
         price = round(price / 0.82, 2)
 
     adults = int(b.get("adults") or 0)
