@@ -7,7 +7,7 @@ from datetime import datetime, date, timedelta
 # 🎯 Ρυθμίσεις
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
-st.title("📊 Smoobu Reservations Dashboard (2025 μέχρι χθες)")
+st.title("📊 Smoobu Reservations Dashboard")
 
 API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 APARTMENT_ID = 750921
@@ -198,3 +198,21 @@ with st.form("expenses_form", clear_on_submit=True):
 st.subheader("💸 Καταχωρημένα Έξοδα")
 st.dataframe(st.session_state["expenses_df"], use_container_width=True, hide_index=True)
 
+# -------------------------------------------------------------
+# Διαγραφή εξόδου
+# -------------------------------------------------------------
+if not st.session_state["expenses_df"].empty:
+    st.subheader("🗑️ Διαγραφή εξόδου")
+    
+    # Δημιουργούμε λίστα για επιλογή με index και περιγραφή
+    options = st.session_state["expenses_df"].apply(
+        lambda row: f"{row['Date']} | {row['Category']} | {row['Amount']} | {row['Description']}", axis=1
+    )
+    selected_expense = st.selectbox("Διάλεξε έξοδο για διαγραφή", options)
+    
+    if st.button("🗑️ Διαγραφή"):
+        # Βρίσκουμε το index της επιλεγμένης εγγραφής
+        idx = options[options == selected_expense].index[0]
+        st.session_state["expenses_df"].drop(idx, inplace=True)
+        st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
+        st.success("✔️ Το έξοδο διαγράφηκε επιτυχώς!")
