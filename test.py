@@ -121,10 +121,10 @@ for b in all_bookings:
             "Days": days,
             "Platform": platform,
             "Guests": guests,
-            "Total Price (€)": round(price, 2),
-            "Booking Fee (€)": fee,
-            "Price Without Tax (€)": price_wo_tax,
-            "Owner Profit (€)": owner_profit
+            "Total Price": round(price, 2),
+            "Booking Fee": fee,
+            "Price Without Tax": price_wo_tax,
+            "Owner Profit": owner_profit
         })
 
 if not rows:
@@ -156,6 +156,13 @@ else:
 filtered_df = filtered_df.sort_values(["Month", "Apartment", "Arrival"])
 
 # -------------------------------------------------------------
+# Μετατροπή ποσών σε μορφή με €
+# -------------------------------------------------------------
+money_columns = ["Total Price", "Booking Fee", "Price Without Tax", "Owner Profit"]
+for col in money_columns:
+    filtered_df[col] = filtered_df[col].apply(lambda x: f"{x:.2f} €")
+
+# -------------------------------------------------------------
 # Εμφάνιση κρατήσεων
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_month})")
@@ -168,7 +175,7 @@ st.subheader("💰 Καταχώρηση Εξόδων")
 
 if "expenses_df" not in st.session_state:
     st.session_state["expenses_df"] = pd.DataFrame(
-        columns=["Date", "Accommodation", "Category", "Amount (€)", "Description"]
+        columns=["Date", "Accommodation", "Category", "Amount", "Description"]
     )
 
 with st.form("expenses_form", clear_on_submit=True):
@@ -179,7 +186,7 @@ with st.form("expenses_form", clear_on_submit=True):
         exp_accommodation = st.selectbox("Κατάλυμα", ["Kalista"])
     with col3:
         exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
-    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
+    exp_amount = st.number_input("Ποσό", min_value=0.0, format="%.2f")
     exp_description = st.text_input("Περιγραφή (προαιρετική)")
     submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
 
@@ -188,13 +195,40 @@ with st.form("expenses_form", clear_on_submit=True):
             "Date": exp_date.strftime("%Y-%m-%d"),
             "Accommodation": exp_accommodation,
             "Category": exp_category,
-            "Amount (€)": round(exp_amount, 2),
+            "Amount": round(exp_amount, 2),
             "Description": exp_description,
         }])
         st.session_state["expenses_df"] = pd.concat(
             [st.session_state["expenses_df"], new_row], ignore_index=True
         )
 
+# Μετατροπή Amount σε μορφή με €
+if not st.session_state["expenses_df"].empty:
+    st.session_state["expenses_df"]["Amount"] = st.session_state["expenses_df"]["Amount"].apply(lambda x: f"{x:.2f} €")
+
 # Εμφάνιση εξόδων
 st.subheader("💸 Καταχωρημένα Έξοδα")
 st.dataframe(st.session_state["expenses_df"], use_container_width=True, hide_index=True)
+
+# -------------------------------------------------------------
+# Αυτόματη αποθήκευση Excel στον ίδιο φάκελο με το script
+# -------------------------------------------------------------
+def save_excel():
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        # Πριν γράψουμε στο Excel, αφαιρούμε το € για να είναι αριθμοί
+        df_to_excel = filtered_df.copy()
+        for col in money_columns:
+            df_to_excel[col] = df_to_excel[col].str.replace(" €", "").astype(float)
+        df_to_excel.to_excel(writer, index=False, sheet_name="Κρατήσεις")
+        
+        expenses_to_excel = st.session_state["expenses_df"].copy()
+        expenses_to_excel["Amount"] = expenses_to_excel["Amount"].str.replace(" €", "").astype(float)
+        expenses_to_excel.to_excel(writer, index=False, sheet_name="Έξοδα")
+    
+    path = "airstay_reservations.xlsx"
+    with open(path, "wb") as f:
+        f.write(output.getvalue())
+
+# Αποθήκευση Excel αυτόματα
+save_excel()
