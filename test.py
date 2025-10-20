@@ -5,12 +5,11 @@ from datetime import datetime, date, timedelta
 import io
 
 # -------------------------------------------------------------
-# 🎯 Ρυθμίσεις Smoobu API
+# 🎯 Ρυθμίσεις
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("📊 Smoobu Reservations Dashboard")
 
-# 💡 Μόνιμο API key & Apartment ID
 API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 APARTMENT_ID = 750921
 
@@ -83,7 +82,7 @@ def price_without_tax(price: float, vat: float = 0.13) -> float:
 
 
 # -------------------------------------------------------------
-# 🧱 Δημιουργία DataFrame
+# 🧱 Δημιουργία DataFrame κρατήσεων
 # -------------------------------------------------------------
 rows = []
 for b in all_bookings:
@@ -117,8 +116,8 @@ for b in all_bookings:
             "ID": b.get("id"),
             "Apartment": apt.get("name"),
             "Guest Name": b.get("guestName") or b.get("guest-name"),
-            "Arrival": arrival_str,
-            "Departure": departure_str,
+            "Arrival": arrival_dt.strftime("%Y-%m-%d"),
+            "Departure": departure_dt.strftime("%Y-%m-%d"),
             "Days": days,
             "Platform": platform,
             "Guests": guests,
@@ -133,8 +132,7 @@ if not rows:
     st.stop()
 
 df = pd.DataFrame(rows)
-df["Arrival"] = pd.to_datetime(df["Arrival"])
-df["Month"] = df["Arrival"].dt.month
+df["Month"] = pd.to_datetime(df["Arrival"]).dt.month
 
 months_el = {
     1: "Ιανουάριος", 2: "Φεβρουάριος", 3: "Μάρτιος", 4: "Απρίλιος",
@@ -144,7 +142,7 @@ months_el = {
 df["Month Name"] = df["Month"].map(months_el)
 
 # -------------------------------------------------------------
-# 📊 Φίλτρο για μήνα (sidebar)
+# Φίλτρο μήνα (sidebar)
 # -------------------------------------------------------------
 st.sidebar.header("📅 Επιλογή Μήνα")
 month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in sorted(months_el.keys())]
@@ -158,17 +156,16 @@ else:
 filtered_df = filtered_df.sort_values(["Month", "Apartment", "Arrival"])
 
 # -------------------------------------------------------------
-# 📋 Εμφάνιση κρατήσεων
+# Εμφάνιση κρατήσεων
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_month})")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------
-# 💸 Καταχώρηση Εξόδων (στην κύρια σελίδα)
+# Καταχώρηση Εξόδων
 # -------------------------------------------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 
-# Δημιουργούμε session state για αποθήκευση εξόδων
 if "expenses_df" not in st.session_state:
     st.session_state["expenses_df"] = pd.DataFrame(
         columns=["Date", "Accommodation", "Category", "Amount (€)", "Description"]
@@ -179,7 +176,7 @@ with st.form("expenses_form", clear_on_submit=True):
     with col1:
         exp_date = st.date_input("Ημερομηνία", value=date.today())
     with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", ["Κalista"])
+        exp_accommodation = st.selectbox("Κατάλυμα", ["Calista"])
     with col3:
         exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
     exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
@@ -199,35 +196,22 @@ with st.form("expenses_form", clear_on_submit=True):
         )
         st.success("✅ Το έξοδο προστέθηκε!")
 
-# Εμφάνιση εξόδων κάτω από τη φόρμα
+# Εμφάνιση εξόδων
 st.subheader("💸 Καταχωρημένα Έξοδα")
 st.dataframe(st.session_state["expenses_df"], use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------
-# 📊 Σύνολα
+# Αυτόματη αποθήκευση Excel
 # -------------------------------------------------------------
-st.subheader("📈 Σύνολα ανά μήνα & πλατφόρμα")
-summary = (
-    df.groupby(["Month Name", "Platform"])[["Total Price (€)", "Booking Fee (€)", "Owner Profit (€)"]]
-    .sum()
-    .round(2)
-    .reset_index()
-)
-st.dataframe(summary, use_container_width=True, hide_index=True)
+def save_excel():
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        filtered_df.to_excel(writer, index=False, sheet_name="Κρατήσεις")
+        st.session_state["expenses_df"].to_excel(writer, index=False, sheet_name="Έξοδα")
+    with open("reservations_and_expenses.xlsx", "wb") as f:
+        f.write(output.getvalue())
 
-# -------------------------------------------------------------
-# 💾 Εξαγωγή Excel
-# -------------------------------------------------------------
-output = io.BytesIO()
-with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-    filtered_df.to_excel(writer, index=False, sheet_name="Κρατήσεις")
-    summary.to_excel(writer, index=False, sheet_name="Σύνολα")
-    st.session_state["expenses_df"].to_excel(writer, index=False, sheet_name="Έξοδα")
-excel_data = output.getvalue()
+# Κάθε φορά που τρέχει το app ή αλλάζει κάτι, αποθηκεύουμε Excel
+save_excel()
 
-st.download_button(
-    label="⬇️ Κατέβασε Excel (Κρατήσεις + Έξοδα)",
-    data=excel_data,
-    file_name=f"reservations_2025_until_{to_date}_with_expenses.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-)
+st.info("💾 Τα δεδομένα αποθηκεύτηκαν αυτόματα στο αρχείο **reservations_and_expenses.xlsx** στο φάκε
