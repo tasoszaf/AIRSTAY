@@ -214,5 +214,3 @@ def save_excel():
 # Κάθε φορά που τρέχει το app ή αλλάζει κάτι, αποθηκεύουμε Excel
 save_excel()
 
-st.info("💾 Τα δεδομένα αποθηκεύτηκαν αυτόματα στο αρχείο **reservations_and_expenses.xlsx** στο φάκελο του app.")
-
