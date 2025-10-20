@@ -199,16 +199,22 @@ with st.form("expenses_form", clear_on_submit=True):
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
-if not st.session_state["expenses_df"].empty:
+def display_expenses():
+    if st.session_state["expenses_df"].empty:
+        st.info("Δεν υπάρχουν καταχωρημένα έξοδα.")
+        return
+
+    container = st.container()
     for i, row in st.session_state["expenses_df"].iterrows():
-        cols = st.columns([1,1,1,1,2,1])
+        cols = container.columns([1,1,1,1,2,1])
         cols[0].write(row["Date"])
         cols[1].write(row["Accommodation"])
         cols[2].write(row["Category"])
         cols[3].write(row["Amount"])
         cols[4].write(row["Description"])
-        
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            st.experimental_rerun()  # Αν θέλεις, μπορείς να σχολιάσεις αν δημιουργεί πρόβλημα
+            st.experimental_rerun()  # σχολιάστε αν θέλετε να αποφύγετε rerun
+
+display_expenses()
