@@ -131,10 +131,10 @@ for b in new_bookings:
         "Days": days,
         "Platform": platform,
         "Guests": guests,
-        "Total Price": round(price,2),
-        "Booking Fee": round(fee,2),
-        "Price Without Tax": round(price_wo_tax,2),
-        "Owner Profit": round(owner_profit,2),
+        "Total Price": price,
+        "Booking Fee": fee,
+        "Price Without Tax": price_wo_tax,
+        "Owner Profit": owner_profit,
         "Month": arrival_dt.month
     })
 
@@ -148,7 +148,20 @@ if not old_bookings_df.empty:
 else:
     bookings_df = new_bookings_df.copy()
 
+# Σιγουρεύουμε ότι οι στήλες είναι numeric
+numeric_cols = ["Total Price","Booking Fee","Price Without Tax","Owner Profit"]
+for col in numeric_cols:
+    bookings_df[col] = pd.to_numeric(bookings_df[col], errors='coerce').fillna(0)
+
 bookings_df.to_excel(BOOKINGS_FILE, index=False)
+
+# -------------------------------------------------------------
+# Σιγουρεύουμε ότι τα έξοδα είναι numeric
+# -------------------------------------------------------------
+if not expenses_df.empty:
+    expenses_df["Amount"] = pd.to_numeric(expenses_df["Amount"], errors='coerce').fillna(0)
+else:
+    expenses_df["Amount"] = 0.0
 
 # -------------------------------------------------------------
 # Sidebar: επιλογή μήνα
@@ -170,18 +183,15 @@ else:
 filtered_df = filtered_df.sort_values(["Month","Apartment","Arrival"])
 
 # -------------------------------------------------------------
-# Υπολογισμός totals ανά μήνα
+# Υπολογισμός totals
 # -------------------------------------------------------------
-def parse_amount(x):
-    return float(x) if x else 0.0
-
 total_price = filtered_df["Total Price"].sum()
 total_owner_profit = filtered_df["Owner Profit"].sum()
 total_expenses = expenses_df["Amount"].sum() if not expenses_df.empty else 0.0
 net_owner_profit = total_owner_profit - total_expenses
 
 # ---------------------------
-# 1️⃣ Κουτάκια με συνολικά (τρία)
+# 1️⃣ Κουτάκια με συνολικά
 # ---------------------------
 col1, col2, col3 = st.columns(3)
 col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
