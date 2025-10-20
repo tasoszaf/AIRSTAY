@@ -207,8 +207,9 @@ def save_excel():
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         filtered_df.to_excel(writer, index=False, sheet_name="Κρατήσεις")
         st.session_state["expenses_df"].to_excel(writer, index=False, sheet_name="Έξοδα")
-    # Αποθήκευση απευθείας στο Desktop
-    path = "/Users/anastasioszafeiriou/Desktop/airstay_reservations.xlsx"
+    
+    # Αποθήκευση στον ίδιο φάκελο με το script
+    path = "airstay_reservations.xlsx"
     with open(path, "wb") as f:
         f.write(output.getvalue())
 
