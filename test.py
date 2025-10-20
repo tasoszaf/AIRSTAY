@@ -8,7 +8,7 @@ import os
 # 🎯 Ρυθμίσεις
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
-st.title("📊 Smoobu Reservations Dashboard")
+st.title("📊 Smoobu Reservations Dashboard (2025 μέχρι χθες)")
 
 API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 
@@ -44,10 +44,31 @@ headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# 🔹 Από/Έως ημερομηνίες
+# 🔹 Sidebar φίλτρα
 # -------------------------------------------------------------
-from_date = "2025-01-01"
-to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+st.sidebar.header("Φίλτρα")
+months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",
+             6:"Ιούνιος",7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",
+             11:"Νοέμβριος",12:"Δεκέμβριος"}
+month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in sorted(months_el.keys())]
+selected_month = st.sidebar.selectbox("Διάλεξε μήνα", month_options)
+group_options = ["Όλα"] + list(groups.keys())
+selected_group = st.sidebar.selectbox("Διάλεξε Κατάλυμα/Group", group_options)
+
+# -------------------------------------------------------------
+# 🔹 Ορισμός ημερομηνιών fetch για τον επιλεγμένο μήνα
+# -------------------------------------------------------------
+if selected_month != "Όλοι οι μήνες":
+    month_index = [k for k,v in months_el.items() if v==selected_month][0]
+    year = 2025
+    start_date = datetime(year, month_index, 1).strftime("%Y-%m-%d")
+    if month_index == 12:
+        end_date = datetime(year, 12, 31).strftime("%Y-%m-%d")
+    else:
+        end_date = (datetime(year, month_index+1, 1) - timedelta(days=1)).strftime("%Y-%m-%d")
+else:
+    start_date = "2025-01-01"
+    end_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
 # 🔹 Συνάρτηση fetch
@@ -80,7 +101,11 @@ def fetch_bookings(start_date: str, end_date: str):
             break
     return all_bookings
 
-all_bookings = fetch_bookings(from_date, to_date)
+try:
+    all_bookings = fetch_bookings(start_date, end_date)
+except Exception as e:
+    st.error(f"❌ Σφάλμα API: {e}")
+    all_bookings = []
 
 # -------------------------------------------------------------
 # 🔹 Υπολογισμοί για κρατήσεις
@@ -152,122 +177,9 @@ for b in all_bookings:
     })
 
 df = pd.DataFrame(rows)
-
-# -------------------------------------------------------------
-# 🔹 Εξασφάλιση ότι υπάρχει η στήλη Month
-# -------------------------------------------------------------
 if "Month" not in df.columns:
     df["Month"] = pd.to_datetime(df["Arrival"]).dt.month
 
 # -------------------------------------------------------------
-# 🔹 Sidebar φίλτρα
+# Συνεχίζεται το υπόλοιπο script: φιλτράρισμα, totals, εμφάνιση ανά Group, έξοδα...
 # -------------------------------------------------------------
-st.sidebar.header("Φίλτρα")
-months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",
-             6:"Ιούνιος",7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",
-             11:"Νοέμβριος",12:"Δεκέμβριος"}
-month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in sorted(months_el.keys())]
-selected_month = st.sidebar.selectbox("Διάλεξε μήνα", month_options)
-group_options = ["Όλα"] + list(groups.keys())
-selected_group = st.sidebar.selectbox("Διάλεξε Κατάλυμα/Group", group_options)
-
-filtered_df = df.copy()
-if selected_month != "Όλοι οι μήνες" and "Month" in filtered_df.columns:
-    month_index = [k for k,v in months_el.items() if v==selected_month][0]
-    filtered_df = filtered_df[filtered_df["Month"]==month_index]
-if selected_group != "Όλα":
-    filtered_df = filtered_df[filtered_df["Group"]==selected_group]
-
-# -------------------------------------------------------------
-# 🔹 Session state & Excel για έξοδα
-# -------------------------------------------------------------
-EXPENSES_FILE = "expenses.xlsx"
-if "expenses_df" not in st.session_state:
-    if os.path.exists(EXPENSES_FILE):
-        st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
-    else:
-        st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
-
-expenses_df = st.session_state["expenses_df"].copy()
-if "Month" not in expenses_df.columns:
-    expenses_df["Month"] = pd.to_datetime(expenses_df["Date"]).dt.month
-filtered_expenses = expenses_df.copy()
-if selected_month != "Όλοι οι μήνες":
-    month_index = [k for k,v in months_el.items() if v==selected_month][0]
-    filtered_expenses = filtered_expenses[filtered_expenses["Month"]==month_index]
-if selected_group != "Όλα":
-    filtered_expenses = filtered_expenses[filtered_expenses["Accommodation"]==selected_group]
-
-# -------------------------------------------------------------
-# 🔹 Υπολογισμός totals
-# -------------------------------------------------------------
-total_price = filtered_df["Total Price"].apply(parse_amount_euro).sum()
-total_owner_profit = filtered_df["Owner Profit"].apply(parse_amount_euro).sum()
-total_expenses = filtered_expenses["Amount"].apply(parse_amount_euro).sum()
-net_owner_profit = total_owner_profit - total_expenses
-
-col1,col2,col3 = st.columns(3)
-col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
-col2.metric("🧾 Συνολικά Έξοδα", f"{total_expenses:.2f} €")
-col3.metric("📊 Καθαρό Κέρδος Ιδιοκτήτη", f"{net_owner_profit:.2f} €")
-
-# -------------------------------------------------------------
-# 🔹 Πίνακας κρατήσεων ανά Group με expander
-# -------------------------------------------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_month}) ανά Κατάλυμα/Group")
-for grp in filtered_df["Group"].unique():
-    grp_df = filtered_df[filtered_df["Group"]==grp].copy()
-    display_grp_df = grp_df.drop(columns=["Group"])
-    with st.expander(f"{grp} ({len(grp_df)} κρατήσεις)"):
-        st.dataframe(display_grp_df, use_container_width=True, hide_index=True)
-
-# -------------------------------------------------------------
-# 🔹 Καταχώρηση εξόδων
-# -------------------------------------------------------------
-st.subheader("💰 Καταχώρηση Εξόδων")
-with st.form("expenses_form", clear_on_submit=True):
-    col1,col2,col3 = st.columns(3)
-    with col1:
-        exp_date = st.date_input("Ημερομηνία", value=date.today())
-    with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα/Group", group_options[1:])
-    with col3:
-        exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
-    exp_amount = st.number_input("Ποσό", min_value=0.0, format="%.2f")
-    exp_description = st.text_input("Περιγραφή (προαιρετική)")
-    submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
-    if submitted:
-        new_row = pd.DataFrame([{
-            "Date": exp_date.strftime("%Y-%m-%d"),
-            "Month": exp_date.month,
-            "Accommodation": exp_accommodation,
-            "Category": exp_category,
-            "Amount": f"{exp_amount:.2f} €",
-            "Description": exp_description,
-        }])
-        st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
-        st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
-
-# -------------------------------------------------------------
-# 🔹 Εμφάνιση εξόδων
-# -------------------------------------------------------------
-st.subheader("💸 Καταχωρημένα Έξοδα")
-def display_expenses():
-    if filtered_expenses.empty:
-        st.info("Δεν υπάρχουν καταχωρημένα έξοδα.")
-        return
-    container = st.container()
-    for i,row in filtered_expenses.iterrows():
-        cols = container.columns([1,1,1,1,2,1])
-        cols[0].write(row["Date"])
-        cols[1].write(row["Accommodation"])
-        cols[2].write(row["Category"])
-        cols[3].write(row["Amount"])
-        cols[4].write(row["Description"])
-        if cols[5].button("🗑️", key=f"del_{i}"):
-            st.session_state["expenses_df"].drop(i,inplace=True)
-            st.session_state["expenses_df"].reset_index(drop=True,inplace=True)
-            st.session_state["expenses_df"].to_excel(EXPENSES_FILE,index=False)
-            break
-
-display_expenses()
