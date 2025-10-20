@@ -123,7 +123,8 @@ for b in all_bookings:
             "Total Price": f"{round(price, 2):.2f} €",
             "Booking Fee": f"{fee:.2f} €",
             "Price Without Tax": f"{price_wo_tax:.2f} €",
-            "Owner Profit": f"{owner_profit:.2f} €"
+            "Owner Profit": f"{owner_profit:.2f} €",
+            "Month": arrival_dt.month
         })
 
 if not rows:
@@ -141,13 +142,13 @@ months_el = {
     5: "Μάιος", 6: "Ιούνιος", 7: "Ιούλιος", 8: "Αύγουστος",
     9: "Σεπτέμβριος", 10: "Οκτώβριος", 11: "Νοέμβριος", 12: "Δεκέμβριος"
 }
-df["Month"] = pd.to_datetime(df["Arrival"]).dt.month
 
 month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in sorted(months_el.keys())]
 selected_month = st.sidebar.selectbox("Διάλεξε μήνα", month_options)
 
 if selected_month != "Όλοι οι μήνες":
-    filtered_df = df[df["Month"].map(months_el) == selected_month]
+    month_index = [k for k,v in months_el.items() if v==selected_month][0]
+    filtered_df = df[df["Month"]==month_index]
 else:
     filtered_df = df.copy()
 
@@ -157,7 +158,7 @@ filtered_df = filtered_df.sort_values(["Month", "Apartment", "Arrival"])
 # Session state για έξοδα
 # -------------------------------------------------------------
 if "expenses_df" not in st.session_state:
-    st.session_state["expenses_df"] = pd.DataFrame(columns=["Date", "Accommodation", "Category", "Amount", "Description"])
+    st.session_state["expenses_df"] = pd.DataFrame(columns=["Date", "Month", "Accommodation", "Category", "Amount", "Description"])
 
 # -------------------------------------------------------------
 # Συνάρτηση parse για € amounts
@@ -170,33 +171,7 @@ def parse_amount_euro(value):
         return 0.0
 
 # -------------------------------------------------------------
-# Υπολογισμός συνολικών
-# -------------------------------------------------------------
-total_price = filtered_df["Total Price"].apply(parse_amount_euro).sum()
-total_owner_profit = filtered_df["Owner Profit"].apply(parse_amount_euro).sum()
-total_price_wo_tax = filtered_df["Price Without Tax"].apply(parse_amount_euro).sum()
-total_expenses = st.session_state["expenses_df"]["Amount"].apply(parse_amount_euro).sum()
-
-total_owner_profit_after_expenses = total_owner_profit - total_expenses
-total_price_wo_tax_after_expenses = total_price_wo_tax - total_expenses
-
-# -------------------------------------------------------------
-# Εμφάνιση συνολικών σε κουτάκια
-# -------------------------------------------------------------
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
-col2.metric("🧾 Συνολικές Δαπάνες", f"{total_expenses:.2f} €")
-col3.metric("📊 Καθαρό Κέρδος Ιδιοκτήτη", f"{total_owner_profit_after_expenses:.2f} €")
-col4.metric("💵 Τιμή χωρίς ΦΠΑ μετά έξοδα", f"{total_price_wo_tax_after_expenses:.2f} €")
-
-# -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
-# -------------------------------------------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_month})")
-st.dataframe(filtered_df, use_container_width=True, hide_index=True)
-
-# -------------------------------------------------------------
-# Καταχώρηση εξόδων
+# Καταχώρηση εξόδων με μήνα
 # -------------------------------------------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -214,6 +189,7 @@ with st.form("expenses_form", clear_on_submit=True):
     if submitted:
         new_row = pd.DataFrame([{
             "Date": exp_date.strftime("%Y-%m-%d"),
+            "Month": exp_date.month,
             "Accommodation": exp_accommodation,
             "Category": exp_category,
             "Amount": f"{exp_amount:.2f} €",
@@ -224,7 +200,49 @@ with st.form("expenses_form", clear_on_submit=True):
         )
 
 # -------------------------------------------------------------
-# Εμφάνιση εξόδων με κουμπί διαγραφής χωρίς rerun
+# Υπολογισμός συνολικών ανά μήνα
+# -------------------------------------------------------------
+expenses_df = st.session_state["expenses_df"].copy()
+
+total_price_by_month = filtered_df.groupby("Month")["Total Price"].apply(lambda x: x.apply(parse_amount_euro).sum())
+total_owner_profit_by_month = filtered_df.groupby("Month")["Owner Profit"].apply(lambda x: x.apply(parse_amount_euro).sum())
+total_price_wo_tax_by_month = filtered_df.groupby("Month")["Price Without Tax"].apply(lambda x: x.apply(parse_amount_euro).sum())
+
+total_expenses_by_month = expenses_df.groupby("Month")["Amount"].apply(lambda x: x.apply(parse_amount_euro).sum())
+
+net_owner_profit_by_month = total_owner_profit_by_month.subtract(total_expenses_by_month, fill_value=0)
+net_price_wo_tax_by_month = total_price_wo_tax_by_month.subtract(total_expenses_by_month, fill_value=0)
+
+# Σύνολα για εμφανιζόμενο μήνα ή όλους
+if selected_month != "Όλοι οι μήνες":
+    month_index = [k for k,v in months_el.items() if v==selected_month][0]
+    total_price = total_price_by_month.get(month_index,0)
+    total_expenses = total_expenses_by_month.get(month_index,0)
+    total_owner_profit_after_expenses = net_owner_profit_by_month.get(month_index,0)
+    total_price_wo_tax_after_expenses = net_price_wo_tax_by_month.get(month_index,0)
+else:
+    total_price = total_price_by_month.sum()
+    total_expenses = total_expenses_by_month.sum()
+    total_owner_profit_after_expenses = net_owner_profit_by_month.sum()
+    total_price_wo_tax_after_expenses = net_price_wo_tax_by_month.sum()
+
+# -------------------------------------------------------------
+# Εμφάνιση συνολικών σε κουτάκια
+# -------------------------------------------------------------
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
+col2.metric("🧾 Συνολικές Δαπάνες", f"{total_expenses:.2f} €")
+col3.metric("📊 Καθαρό Κέρδος Ιδιοκτήτη", f"{total_owner_profit_after_expenses:.2f} €")
+col4.metric("💵 Τιμή χωρίς ΦΠΑ μετά έξοδα", f"{total_price_wo_tax_after_expenses:.2f} €")
+
+# -------------------------------------------------------------
+# Εμφάνιση κρατήσεων
+# -------------------------------------------------------------
+st.subheader(f"📅 Κρατήσεις ({selected_month})")
+st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
+# -------------------------------------------------------------
+# Εμφάνιση εξόδων με κουμπί διαγραφής
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
