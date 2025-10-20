@@ -179,7 +179,7 @@ with st.form("expenses_form", clear_on_submit=True):
     with col1:
         exp_date = st.date_input("Ημερομηνία", value=date.today())
     with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", ["Calista"])
+        exp_accommodation = st.selectbox("Κατάλυμα", ["Κalista"])
     with col3:
         exp_category = st.selectbox("Κατηγορία", ["Cleaning", "Linen", "Maintenance", "Utilities", "Supplies"])
     exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
