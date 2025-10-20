@@ -117,8 +117,8 @@ for b in new_bookings:
 
     price = float(b.get("price") or 0)
 
-    # 🔹 Αν η πλατφόρμα είναι Expedia, διαιρούμε με 0.82
-    if platform.strip().lower() == "expedia":
+    # 🔹 Expedia fix: ανεξαρτήτως κεφαλαίων/κενών
+    if "expedia" in platform.strip().lower():
         price = round(price / 0.82, 2)
 
     adults = int(b.get("adults") or 0)
@@ -155,7 +155,6 @@ if not old_bookings_df.empty:
 else:
     bookings_df = new_bookings_df.copy()
 
-# Σιγουρεύουμε ότι οι στήλες είναι numeric
 numeric_cols = ["Total Price","Booking Fee","Price Without Tax","Owner Profit"]
 for col in numeric_cols:
     bookings_df[col] = pd.to_numeric(bookings_df[col], errors='coerce').fillna(0)
