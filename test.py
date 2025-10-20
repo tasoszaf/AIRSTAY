@@ -50,45 +50,37 @@ from_date = "2025-01-01"
 to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
-# 🔹 Συνάρτηση fetch ανά μήνα
+# 🔹 Συνάρτηση fetch
 # -------------------------------------------------------------
-def fetch_bookings_by_month(start_date: str, end_date: str):
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+def fetch_bookings(start_date: str, end_date: str):
+    params = {
+        "from": start_date,
+        "to": end_date,
+        "excludeBlocked": "true",
+        "showCancellation": "true",
+        "page": 1,
+        "pageSize": 100,
+    }
     all_bookings = []
-
-    current_start = start_dt
-    while current_start <= end_dt:
-        next_month = (current_start.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-        current_end = min(next_month, end_dt)
-
-        params = {
-            "from": current_start.strftime("%Y-%m-%d"),
-            "to": current_end.strftime("%Y-%m-%d"),
-            "apartmentId": None,
-            "excludeBlocked": "true",
-            "showCancellation": "true",
-            "page": 1,
-            "pageSize": 100,
-        }
-
+    while True:
         try:
             r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
             r.raise_for_status()
             data = r.json()
             bookings = data.get("bookings", [])
+            if not bookings:
+                break
             all_bookings.extend(bookings)
+            if data.get("page") and data.get("page") < data.get("page_count", 1):
+                params["page"] += 1
+            else:
+                break
         except requests.exceptions.RequestException as e:
-            st.warning(f"❌ Σφάλμα API για {current_start.strftime('%Y-%m-%d')} έως {current_end.strftime('%Y-%m-%d')}: {e}")
-
-        current_start = next_month + timedelta(days=1)
-
+            st.warning(f"❌ Σφάλμα API: {e}")
+            break
     return all_bookings
 
-# -------------------------------------------------------------
-# 🔹 Ανάκτηση κρατήσεων
-# -------------------------------------------------------------
-all_bookings = fetch_bookings_by_month(from_date, to_date)
+all_bookings = fetch_bookings(from_date, to_date)
 
 # -------------------------------------------------------------
 # 🔹 Υπολογισμοί για κρατήσεις
@@ -121,9 +113,6 @@ def get_group_for_id(apartment_id):
             return grp
     return "UNKNOWN"
 
-# -------------------------------------------------------------
-# 🔹 Δημιουργία DataFrame κρατήσεων
-# -------------------------------------------------------------
 rows = []
 for b in all_bookings:
     arrival_str = b.get("arrival")
@@ -159,7 +148,7 @@ for b in all_bookings:
         "Booking Fee": f"{fee:.2f} €",
         "Owner Profit": f"{owner_profit:.2f} €",
         "Month": arrival_dt.month,
-        "Group": get_group_for_id(b.get("id"))  # Για φιλτράρισμα και έξοδα
+        "Group": get_group_for_id(b.get("id"))
     })
 
 df = pd.DataFrame(rows)
@@ -183,15 +172,6 @@ if selected_month != "Όλοι οι μήνες":
 if selected_group != "Όλα":
     filtered_df = filtered_df[filtered_df["Group"]==selected_group]
 
-filtered_df = filtered_df.sort_values(["Month","Arrival"])
-
-# -------------------------------------------------------------
-# 🔹 Αφαίρεση στήλης Group για εμφάνιση στον πίνακα
-# -------------------------------------------------------------
-display_df = filtered_df.copy()
-if "Group" in display_df.columns:
-    display_df = display_df.drop(columns=["Group"])
-
 # -------------------------------------------------------------
 # 🔹 Session state & Excel για έξοδα
 # -------------------------------------------------------------
@@ -203,13 +183,6 @@ if "expenses_df" not in st.session_state:
         st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 expenses_df = st.session_state["expenses_df"].copy()
-if "Month" not in expenses_df.columns or expenses_df.empty:
-    expenses_df["Month"] = pd.Series(dtype=int)
-    expenses_df["Amount"] = pd.Series(dtype=float)
-
-# -------------------------------------------------------------
-# 🔹 Φιλτράρισμα εξόδων ανά μήνα & group
-# -------------------------------------------------------------
 filtered_expenses = expenses_df.copy()
 if selected_month != "Όλοι οι μήνες":
     month_index = [k for k,v in months_el.items() if v==selected_month][0]
@@ -231,10 +204,14 @@ col2.metric("🧾 Συνολικά Έξοδα", f"{total_expenses:.2f} €")
 col3.metric("📊 Καθαρό Κέρδος Ιδιοκτήτη", f"{net_owner_profit:.2f} €")
 
 # -------------------------------------------------------------
-# 🔹 Πίνακας κρατήσεων
+# 🔹 Πίνακας κρατήσεων ανά Group με expander
 # -------------------------------------------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_month})")
-st.dataframe(display_df, use_container_width=True, hide_index=True)
+st.subheader(f"📅 Κρατήσεις ({selected_month}) ανά Κατάλυμα/Group")
+for grp in filtered_df["Group"].unique():
+    grp_df = filtered_df[filtered_df["Group"]==grp].copy()
+    display_grp_df = grp_df.drop(columns=["Group"])
+    with st.expander(f"{grp} ({len(grp_df)} κρατήσεις)"):
+        st.dataframe(display_grp_df, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------
 # 🔹 Καταχώρηση εξόδων
