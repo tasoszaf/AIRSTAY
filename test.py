@@ -59,7 +59,6 @@ def fetch_bookings_by_month(start_date: str, end_date: str):
 
     current_start = start_dt
     while current_start <= end_dt:
-        # Τέλος μήνα
         next_month = (current_start.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
         current_end = min(next_month, end_dt)
 
@@ -160,7 +159,7 @@ for b in all_bookings:
         "Booking Fee": f"{fee:.2f} €",
         "Owner Profit": f"{owner_profit:.2f} €",
         "Month": arrival_dt.month,
-        "Group": get_group_for_id(b.get("id"))
+        "Group": get_group_for_id(b.get("id"))  # Για φιλτράρισμα και έξοδα
     })
 
 df = pd.DataFrame(rows)
@@ -187,10 +186,11 @@ if selected_group != "Όλα":
 filtered_df = filtered_df.sort_values(["Month","Arrival"])
 
 # -------------------------------------------------------------
-# 🔹 Αφαίρεση στήλης Group από πίνακα
+# 🔹 Αφαίρεση στήλης Group για εμφάνιση στον πίνακα
 # -------------------------------------------------------------
-if "Group" in filtered_df.columns:
-    filtered_df = filtered_df.drop(columns=["Group"])
+display_df = filtered_df.copy()
+if "Group" in display_df.columns:
+    display_df = display_df.drop(columns=["Group"])
 
 # -------------------------------------------------------------
 # 🔹 Session state & Excel για έξοδα
@@ -208,12 +208,8 @@ if "Month" not in expenses_df.columns or expenses_df.empty:
     expenses_df["Amount"] = pd.Series(dtype=float)
 
 # -------------------------------------------------------------
-# 🔹 Υπολογισμός totals
+# 🔹 Φιλτράρισμα εξόδων ανά μήνα & group
 # -------------------------------------------------------------
-total_price = filtered_df["Total Price"].apply(parse_amount_euro).sum()
-total_owner_profit = filtered_df["Owner Profit"].apply(parse_amount_euro).sum()
-
-# Φιλτράρουμε έξοδα ανά group & μήνα
 filtered_expenses = expenses_df.copy()
 if selected_month != "Όλοι οι μήνες":
     month_index = [k for k,v in months_el.items() if v==selected_month][0]
@@ -221,6 +217,11 @@ if selected_month != "Όλοι οι μήνες":
 if selected_group != "Όλα":
     filtered_expenses = filtered_expenses[filtered_expenses["Accommodation"]==selected_group]
 
+# -------------------------------------------------------------
+# 🔹 Υπολογισμός totals
+# -------------------------------------------------------------
+total_price = filtered_df["Total Price"].apply(parse_amount_euro).sum()
+total_owner_profit = filtered_df["Owner Profit"].apply(parse_amount_euro).sum()
 total_expenses = filtered_expenses["Amount"].apply(parse_amount_euro).sum()
 net_owner_profit = total_owner_profit - total_expenses
 
@@ -233,7 +234,7 @@ col3.metric("📊 Καθαρό Κέρδος Ιδιοκτήτη", f"{net_owner_pr
 # 🔹 Πίνακας κρατήσεων
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_month})")
-st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------
 # 🔹 Καταχώρηση εξόδων
