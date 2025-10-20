@@ -198,20 +198,3 @@ with st.form("expenses_form", clear_on_submit=True):
 # Εμφάνιση εξόδων
 st.subheader("💸 Καταχωρημένα Έξοδα")
 st.dataframe(st.session_state["expenses_df"], use_container_width=True, hide_index=True)
-
-# -------------------------------------------------------------
-# Αυτόματη αποθήκευση Excel στο Desktop χωρίς μήνυμα
-# -------------------------------------------------------------
-def save_excel():
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        filtered_df.to_excel(writer, index=False, sheet_name="Κρατήσεις")
-        st.session_state["expenses_df"].to_excel(writer, index=False, sheet_name="Έξοδα")
-    
-    # Αποθήκευση στον ίδιο φάκελο με το script
-    path = "airstay_reservations.xlsx"
-    with open(path, "wb") as f:
-        f.write(output.getvalue())
-
-# Κάθε φορά που τρέχει ή ανανεώνεται το app, αποθηκεύουμε Excel
-save_excel()
