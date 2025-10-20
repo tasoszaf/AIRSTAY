@@ -195,7 +195,7 @@ with st.form("expenses_form", clear_on_submit=True):
         )
 
 # -------------------------------------------------------------
-# Εμφάνιση εξόδων με κουμπί διαγραφής ανά γραμμή χωρίς rerun
+# Εμφάνιση εξόδων με κουμπί διαγραφής χωρίς rerun
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
@@ -215,6 +215,6 @@ def display_expenses():
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            st.experimental_rerun()  # σχολιάστε αν θέλετε να αποφύγετε rerun
+            break  # σταματάμε το loop για να αποφύγουμε conflict
 
 display_expenses()
