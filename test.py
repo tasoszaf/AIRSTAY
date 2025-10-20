@@ -114,7 +114,13 @@ for b in new_bookings:
     apt = b.get("apartment", {}) or {}
     ch = b.get("channel", {}) or {}
     platform = ch.get("name") or "Direct booking"
+
     price = float(b.get("price") or 0)
+
+    # 🔹 Αν η πλατφόρμα είναι Expedia, διαιρούμε με 0.82
+    if "expedia" in platform.strip().lower():
+        price = round(price / 0.82, 2)
+
     adults = int(b.get("adults") or 0)
     children = int(b.get("children") or 0)
     guests = adults + children
@@ -122,6 +128,7 @@ for b in new_bookings:
     fee = compute_booking_fee(platform, price)
     price_wo_tax = price_without_tax(price, vat=0.13)
     owner_profit = round(price - fee, 2)
+
     rows.append({
         "ID": b.get("id"),
         "Apartment": apt.get("name"),
