@@ -102,6 +102,11 @@ for b in all_bookings:
         ch = b.get("channel", {}) or {}
         platform = ch.get("name") or "Direct booking"
         price = float(b.get("price") or 0)
+
+        # 🟢 Expedia correction — αν είναι Expedia, διόρθωσε την τιμή
+        if "expedia" in platform.lower():
+            price = price / 0.82
+
         adults = int(b.get("adults") or 0)
         children = int(b.get("children") or 0)
         guests = adults + children
@@ -123,7 +128,7 @@ for b in all_bookings:
             "Guests": guests,
             "Total Price": f"{round(price, 2):.2f} €",
             "Booking Fee": f"{fee:.2f} €",
-            "Price Without Tax": f"{price_wo_tax:.2f} €",  # ✅ τροποποιημένο
+            "Price Without Tax": f"{price_wo_tax:.2f} €",
             "Owner Profit": f"{owner_profit:.2f} €",
             "Month": arrival_dt.month
         })
@@ -215,7 +220,7 @@ st.subheader(f"📅 Κρατήσεις ({selected_month})")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 # ---------------------------
-# 3️⃣ Καταχώρηση & εμφάνιση εξόδων (κάτω-κάτω)
+# 3️⃣ Καταχώρηση & εμφάνιση εξόδων
 # ---------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -242,7 +247,6 @@ with st.form("expenses_form", clear_on_submit=True):
         st.session_state["expenses_df"] = pd.concat(
             [st.session_state["expenses_df"], new_row], ignore_index=True
         )
-        # Αυτόματη αποθήκευση σε Excel
         st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
 
 st.subheader("💸 Καταχωρημένα Έξοδα")
@@ -261,7 +265,6 @@ def display_expenses():
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            # Αυτόματη αποθήκευση μετά διαγραφή
             st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
             break
 
