@@ -112,7 +112,7 @@ for b in all_bookings:
 
         # 🟢 Τιμή για Expedia
         if "expedia" in platform_lower:
-            price = price / 0.82  # Διόρθωση τιμής μόνο για Expedia
+            price = price / 0.82
 
         # 🟢 Καθαρή αξία για όλες τις πλατφόρμες
         price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month)
@@ -120,8 +120,11 @@ for b in all_bookings:
         # 🟢 Προμήθεια Airstay (24,8% του Price Without Tax)
         airstay_commission = round(price_wo_tax * 0.248, 2)
 
+        # 🟢 Booking Fee
         fee = compute_booking_fee(platform, price)
-        owner_profit = round(price - fee, 2)
+
+        # 🟢 Owner Profit = Price Without Tax - Booking Fee - Airstay Commission
+        owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
 
         rows.append({
             "ID": b.get("id"),
@@ -135,8 +138,8 @@ for b in all_bookings:
             "Total Price": f"{round(price, 2):.2f} €",
             "Booking Fee": f"{fee:.2f} €",
             "Price Without Tax": f"{price_wo_tax:.2f} €",
-            "Owner Profit": f"{owner_profit:.2f} €",
             "Airstay Commission": f"{airstay_commission:.2f} €",
+            "Owner Profit": f"{owner_profit:.2f} €",
             "Month": arrival_dt.month
         })
 
