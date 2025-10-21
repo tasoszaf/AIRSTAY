@@ -117,6 +117,9 @@ for b in all_bookings:
         # 🟢 Καθαρή αξία για όλες τις πλατφόρμες
         price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month)
 
+        # 🟢 Προμήθεια Airstay (24,8% του Price Without Tax)
+        airstay_commission = round(price_wo_tax * 0.248, 2)
+
         fee = compute_booking_fee(platform, price)
         owner_profit = round(price - fee, 2)
 
@@ -133,6 +136,7 @@ for b in all_bookings:
             "Booking Fee": f"{fee:.2f} €",
             "Price Without Tax": f"{price_wo_tax:.2f} €",
             "Owner Profit": f"{owner_profit:.2f} €",
+            "Airstay Commission": f"{airstay_commission:.2f} €",
             "Month": arrival_dt.month
         })
 
