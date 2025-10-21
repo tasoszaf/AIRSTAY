@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date, timedelta
-import os
 
 # -------------------------------------------------------------
 # Ρυθμίσεις
@@ -16,22 +15,9 @@ headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# Αρχείο Excel για κρατήσεις
+# Ημερομηνίες
 # -------------------------------------------------------------
-BOOKINGS_FILE = "bookings.xlsx"
-if os.path.exists(BOOKINGS_FILE):
-    existing_df = pd.read_excel(BOOKINGS_FILE)
-    if not existing_df.empty:
-        last_date_str = existing_df['Arrival'].max()
-        last_date_dt = datetime.strptime(last_date_str, "%Y-%m-%d") + timedelta(days=1)
-        from_date = last_date_dt.strftime("%Y-%m-%d")
-    else:
-        existing_df = pd.DataFrame()
-        from_date = "2025-01-01"
-else:
-    existing_df = pd.DataFrame()
-    from_date = "2025-01-01"
-
+from_date = "2025-01-01"
 to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 params = {
@@ -45,7 +31,7 @@ params = {
 }
 
 # -------------------------------------------------------------
-# Ανάκτηση κρατήσεων από API
+# Ανάκτηση κρατήσεων
 # -------------------------------------------------------------
 all_bookings = []
 while True:
@@ -94,7 +80,7 @@ def compute_price_without_tax(price, nights, month):
     return round((adjusted / 1.13) - (adjusted * 0.005), 2)
 
 # -------------------------------------------------------------
-# Δημιουργία DataFrame κρατήσεων
+# Δημιουργία DataFrame κρατήσεων (μόνο σε μνήμη)
 # -------------------------------------------------------------
 rows = []
 for b in all_bookings:
@@ -144,30 +130,20 @@ for b in all_bookings:
             "Days": days,
             "Platform": platform,
             "Guests": guests,
-            "Total Price": f"{round(price, 2):.2f} €",
-            "Booking Fee": f"{fee:.2f} €",
-            "Price Without Tax": f"{price_wo_tax:.2f} €",
-            "Airstay Commission": f"{airstay_commission:.2f} €",
-            "Owner Profit": f"{owner_profit:.2f} €",
+            "Total Price": round(price, 2),
+            "Booking Fee": round(fee, 2),
+            "Price Without Tax": round(price_wo_tax, 2),
+            "Airstay Commission": round(airstay_commission, 2),
+            "Owner Profit": round(owner_profit, 2),
             "Month": arrival_dt.month
         })
 
-# -------------------------------------------------------------
-# Συγχώνευση με υπάρχουσες κρατήσεις και αποφυγή διπλών βάσει ID
-# -------------------------------------------------------------
-new_df = pd.DataFrame(rows)
-
-if not existing_df.empty:
-    # Κρατάμε μόνο νέες που δεν υπάρχουν ήδη βάσει ID
-    new_df = new_df[~new_df['ID'].isin(existing_df['ID'])]
-    df = pd.concat([existing_df, new_df], ignore_index=True)
-else:
-    df = new_df
-
-df.to_excel(BOOKINGS_FILE, index=False)
+# DataFrame σε μνήμη και drop duplicates βάσει ID
+df = pd.DataFrame(rows)
+df = df.drop_duplicates(subset=["ID"])
 
 # -------------------------------------------------------------
-# Sidebar, κουτάκια και expenses
+# Sidebar επιλογής μήνα
 # -------------------------------------------------------------
 st.sidebar.header("📅 Επιλογή Μήνα")
 months_el = {
@@ -184,17 +160,17 @@ if selected_month != "Όλοι οι μήνες":
     filtered_df = df[df["Month"]==month_index]
 else:
     filtered_df = df.copy()
+
 filtered_df = filtered_df.sort_values(["Month","Apartment","Arrival"])
 
-# ---------------------------
-# Session state & Excel για έξοδα
-# ---------------------------
+# -------------------------------------------------------------
+# Session state & Excel για έξοδα (εδώ ακόμα θέλουμε Excel για έξοδα)
+# -------------------------------------------------------------
 EXPENSES_FILE = "expenses.xlsx"
-
 if "expenses_df" not in st.session_state:
-    if os.path.exists(EXPENSES_FILE):
+    try:
         st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
-    else:
+    except:
         st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 def parse_amount_euro(value):
@@ -208,8 +184,8 @@ if "Month" not in expenses_df.columns or expenses_df.empty:
     expenses_df["Month"] = pd.Series(dtype=int)
     expenses_df["Amount"] = pd.Series(dtype=float)
 
-total_price_by_month = filtered_df.groupby("Month")["Total Price"].apply(lambda x: x.apply(parse_amount_euro).sum())
-total_owner_profit_by_month = filtered_df.groupby("Month")["Owner Profit"].apply(lambda x: x.apply(parse_amount_euro).sum())
+total_price_by_month = filtered_df.groupby("Month")["Total Price"].sum()
+total_owner_profit_by_month = filtered_df.groupby("Month")["Owner Profit"].sum()
 total_expenses_by_month = expenses_df.groupby("Month")["Amount"].apply(lambda x: x.apply(parse_amount_euro).sum())
 
 net_owner_profit_by_month = total_owner_profit_by_month.subtract(total_expenses_by_month, fill_value=0)
@@ -264,7 +240,6 @@ with st.form("expenses_form", clear_on_submit=True):
             "Description": exp_description,
         }])
         st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
-        st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
 
 st.subheader("💸 Καταχωρημένα Έξοδα")
 def display_expenses():
@@ -282,7 +257,6 @@ def display_expenses():
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
             break
 
 display_expenses()
