@@ -70,17 +70,31 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.15
     elif "expedia" in p:
         rate = 0.18
+    elif "tara" in p:
+        rate = 0.18
     else:
         rate = 0.00
     return round((price or 0) * rate, 2)
 
-# ✳️ ΝΕΑ ΣΥΝΑΡΤΗΣΗ για Price Without Tax με βάση τον μήνα
-def adjusted_price_without_tax(price: float, nights: int, month: int) -> float:
+
+# ΝΕΑ συνάρτηση Price Without Tax
+def adjusted_price_without_tax(price, nights, month, platform):
     if not price or not nights:
         return 0.0
+
+    # Αν είναι χειμώνας (Νοέμβριος, Δεκέμβριος, Ιανουάριος, Φεβρουάριος) => base=2, αλλιώς 8
     base = 2 if month in [11, 12, 1, 2] else 8
-    adjusted = (price - base * nights)
-    return round((adjusted / 1.13) - (adjusted * 0.005), 2)
+    p = platform.lower().strip() if platform else ""
+
+    if "expedia" in p:
+        adjusted = (price * 0.82) - (base * nights)
+        result = (adjusted / 1.13) - (adjusted * 0.005) + (price * 0.18)
+    else:
+        adjusted = price - (base * nights)
+        result = (adjusted / 1.13) - (adjusted * 0.005)
+
+    return round(result, 2)
+
 
 # -------------------------------------------------------------
 # 🧱 Δημιουργία DataFrame κρατήσεων
@@ -96,25 +110,19 @@ for b in all_bookings:
         departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
     except Exception:
         continue
-
     if arrival_dt.year == 2025:
         apt = b.get("apartment", {}) or {}
         ch = b.get("channel", {}) or {}
         platform = ch.get("name") or "Direct booking"
         price = float(b.get("price") or 0)
-
-        # 🟢 Expedia correction — αν είναι Expedia, διόρθωσε την τιμή
-        if "expedia" in platform.lower():
-            price = price / 0.82
-
         adults = int(b.get("adults") or 0)
         children = int(b.get("children") or 0)
         guests = adults + children
         days = max((departure_dt - arrival_dt).days, 0)
-        fee = compute_booking_fee(platform, price)
 
-        # ✳️ Νέος υπολογισμός για Price Without Tax
-        price_wo_tax = adjusted_price_without_tax(price, days, arrival_dt.month)
+        # Υπολογισμός fees & taxes
+        fee = compute_booking_fee(platform, price)
+        price_wo_tax = adjusted_price_without_tax(price, days, arrival_dt.month, platform)
         owner_profit = round(price - fee, 2)
 
         rows.append({
@@ -128,7 +136,7 @@ for b in all_bookings:
             "Guests": guests,
             "Total Price": f"{round(price, 2):.2f} €",
             "Booking Fee": f"{fee:.2f} €",
-            "Price Without Tax": f"{price_wo_tax:.2f} €",
+            "Price Without Tax": f"{price_wo_tax:.2f} €",  # ✅ Νέος υπολογισμός
             "Owner Profit": f"{owner_profit:.2f} €",
             "Month": arrival_dt.month
         })
@@ -153,11 +161,11 @@ month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in sorted(mon
 selected_month = st.sidebar.selectbox("Διάλεξε μήνα", month_options)
 
 if selected_month != "Όλοι οι μήνες":
-    month_index = [k for k, v in months_el.items() if v == selected_month][0]
-    filtered_df = df[df["Month"] == month_index]
+    month_index = [k for k,v in months_el.items() if v==selected_month][0]
+    filtered_df = df[df["Month"]==month_index]
 else:
     filtered_df = df.copy()
-filtered_df = filtered_df.sort_values(["Month", "Apartment", "Arrival"])
+filtered_df = filtered_df.sort_values(["Month","Apartment","Arrival"])
 
 # -------------------------------------------------------------
 # Session state & Excel για έξοδα
@@ -168,16 +176,14 @@ if "expenses_df" not in st.session_state:
     if os.path.exists(EXPENSES_FILE):
         st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
     else:
-        st.session_state["expenses_df"] = pd.DataFrame(
-            columns=["Date", "Month", "Accommodation", "Category", "Amount", "Description"]
-        )
+        st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
 # Συνάρτηση parse για € amounts
 # -------------------------------------------------------------
 def parse_amount_euro(value):
     try:
-        return float(str(value).replace(" €", ""))
+        return float(str(value).replace(" €",""))
     except:
         return 0.0
 
@@ -196,10 +202,10 @@ total_expenses_by_month = expenses_df.groupby("Month")["Amount"].apply(lambda x:
 net_owner_profit_by_month = total_owner_profit_by_month.subtract(total_expenses_by_month, fill_value=0)
 
 if selected_month != "Όλοι οι μήνες":
-    month_index = [k for k, v in months_el.items() if v == selected_month][0]
-    total_price = total_price_by_month.get(month_index, 0)
-    total_expenses = total_expenses_by_month.get(month_index, 0)
-    total_owner_profit_after_expenses = net_owner_profit_by_month.get(month_index, 0)
+    month_index = [k for k,v in months_el.items() if v==selected_month][0]
+    total_price = total_price_by_month.get(month_index,0)
+    total_expenses = total_expenses_by_month.get(month_index,0)
+    total_owner_profit_after_expenses = net_owner_profit_by_month.get(month_index,0)
 else:
     total_price = total_price_by_month.sum()
     total_expenses = total_expenses_by_month.sum()
@@ -220,7 +226,7 @@ st.subheader(f"📅 Κρατήσεις ({selected_month})")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 # ---------------------------
-# 3️⃣ Καταχώρηση & εμφάνιση εξόδων
+# 3️⃣ Καταχώρηση & εμφάνιση εξόδων (κάτω-κάτω)
 # ---------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -244,9 +250,8 @@ with st.form("expenses_form", clear_on_submit=True):
             "Amount": f"{exp_amount:.2f} €",
             "Description": exp_description,
         }])
-        st.session_state["expenses_df"] = pd.concat(
-            [st.session_state["expenses_df"], new_row], ignore_index=True
-        )
+        st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
+        # Αυτόματη αποθήκευση σε Excel
         st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
 
 st.subheader("💸 Καταχωρημένα Έξοδα")
@@ -265,6 +270,7 @@ def display_expenses():
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
+            # Αυτόματη αποθήκευση μετά διαγραφή
             st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
             break
 
