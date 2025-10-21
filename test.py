@@ -24,7 +24,8 @@ if os.path.exists(BOOKINGS_FILE):
     existing_df = pd.read_excel(BOOKINGS_FILE)
     if not existing_df.empty:
         last_date_str = existing_df['Arrival'].max()
-        from_date = (datetime.strptime(last_date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        last_date_dt = datetime.strptime(last_date_str, "%Y-%m-%d") + timedelta(days=1)
+        from_date = last_date_dt.strftime("%Y-%m-%d")
     else:
         existing_df = pd.DataFrame()
         from_date = "2025-01-01"
@@ -119,20 +120,20 @@ for b in all_bookings:
 
         platform_lower = platform.lower().strip() if platform else ""
 
-        # 🟢 Τιμή για Expedia
+        # Τιμή για Expedia
         if "expedia" in platform_lower:
             price = price / 0.82
 
-        # 🟢 Καθαρή αξία για όλες τις πλατφόρμες
+        # Καθαρή αξία για όλες τις πλατφόρμες
         price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month)
 
-        # 🟢 Προμήθεια Airstay (24,8% του Price Without Tax)
+        # Προμήθεια Airstay (24,8% του Price Without Tax)
         airstay_commission = round(price_wo_tax * 0.248, 2)
 
-        # 🟢 Booking Fee
+        # Booking Fee
         fee = compute_booking_fee(platform, price)
 
-        # 🟢 Owner Profit = Price Without Tax - Booking Fee - Airstay Commission
+        # Owner Profit = Price Without Tax - Booking Fee - Airstay Commission
         owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
 
         rows.append({
