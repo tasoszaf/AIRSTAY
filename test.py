@@ -148,7 +148,7 @@ for apt_name, id_list in APARTMENTS.items():
 df = pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
 
 # -------------------------------------------------------------
-# Sidebar επιλογής καταλύματος (μόνο συγκεκριμένα)
+# Sidebar επιλογής καταλύματος
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 apartment_options = list(APARTMENTS.keys())
@@ -179,12 +179,32 @@ def parse_amount(value):
         return 0.0
 
 # -------------------------------------------------------------
-# Υπολογισμοί metrics για το επιλεγμένο κατάλυμα
+# Dropdown για μήνα πάνω από τα metrics
 # -------------------------------------------------------------
+st.subheader("📅 Επιλογή Μήνα")
+months_el = {
+    1: "Ιανουάριος", 2: "Φεβρουάριος", 3: "Μάρτιος", 4: "Απρίλιος",
+    5: "Μάιος", 6: "Ιούνιος", 7: "Ιούλιος", 8: "Αύγουστος",
+    9: "Σεπτέμβριος", 10: "Οκτώβριος", 11: "Νοέμβριος", 12: "Δεκέμβριος"
+}
+
+month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in range(1,13)]
+selected_month = st.selectbox("Μήνας", month_options)
+
+# Φιλτράρισμα για επιλεγμένο μήνα
+filtered_df_month = filtered_df.copy()
 exp_filtered = expenses_df[expenses_df["Accommodation"]==selected_apartment]
-total_price = filtered_df["Total Price"].sum()
-total_owner_profit = filtered_df["Owner Profit"].sum()
-total_expenses = exp_filtered["Amount"].apply(parse_amount).sum()
+exp_filtered_month = exp_filtered.copy()
+
+if selected_month != "Όλοι οι μήνες":
+    month_index = [k for k,v in months_el.items() if v==selected_month][0]
+    filtered_df_month = filtered_df_month[filtered_df_month["Month"]==month_index]
+    exp_filtered_month = exp_filtered_month[exp_filtered_month["Month"]==month_index]
+
+# Υπολογισμός metrics
+total_price = filtered_df_month["Total Price"].sum()
+total_owner_profit = filtered_df_month["Owner Profit"].sum()
+total_expenses = exp_filtered_month["Amount"].apply(parse_amount).sum()
 net_owner_profit = total_owner_profit - total_expenses
 
 # ---------------------------
@@ -198,8 +218,8 @@ col3.metric("📊 Κέρδος Ιδιοκτήτη", f"{net_owner_profit:.2f} €
 # ---------------------------
 # Πίνακας κρατήσεων
 # ---------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
-st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+st.subheader(f"📅 Κρατήσεις ({selected_apartment}, {selected_month})")
+st.dataframe(filtered_df_month, use_container_width=True, hide_index=True)
 
 # ---------------------------
 # Καταχώρηση & εμφάνιση εξόδων
@@ -229,14 +249,17 @@ with st.form("expenses_form", clear_on_submit=True):
         st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
 
 st.subheader("💸 Καταχωρημένα Έξοδα")
-def display_expenses(selected_apartment):
+def display_expenses(selected_apartment, selected_month):
     df_exp = st.session_state["expenses_df"]
     df_exp = df_exp[df_exp["Accommodation"]==selected_apartment]
-    
+    if selected_month != "Όλοι οι μήνες":
+        month_index = [k for k,v in months_el.items() if v==selected_month][0]
+        df_exp = df_exp[df_exp["Month"]==month_index]
+
     if df_exp.empty:
         st.info("Δεν υπάρχουν καταχωρημένα έξοδα.")
         return
-    
+
     container = st.container()
     for i, row in df_exp.iterrows():
         cols = container.columns([1,1,1,1,2,1])
@@ -250,4 +273,4 @@ def display_expenses(selected_apartment):
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
             st.experimental_rerun()
 
-display_expenses(selected_apartment)
+display_expenses(selected_apartment, selected_month)
