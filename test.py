@@ -17,9 +17,21 @@ headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# 📅 Ημερομηνίες
+# 📂 Αρχείο Excel για κρατήσεις
 # -------------------------------------------------------------
-from_date = "2025-01-01"
+BOOKINGS_FILE = "bookings.xlsx"
+if os.path.exists(BOOKINGS_FILE):
+    existing_df = pd.read_excel(BOOKINGS_FILE)
+    if not existing_df.empty:
+        last_date_str = existing_df['Arrival'].max()
+        from_date = (datetime.strptime(last_date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        existing_df = pd.DataFrame()
+        from_date = "2025-01-01"
+else:
+    existing_df = pd.DataFrame()
+    from_date = "2025-01-01"
+
 to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 params = {
@@ -33,7 +45,7 @@ params = {
 }
 
 # -------------------------------------------------------------
-# 📦 Ανάκτηση κρατήσεων
+# 📦 Ανάκτηση κρατήσεων από API
 # -------------------------------------------------------------
 all_bookings = []
 while True:
@@ -74,9 +86,6 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.00
     return round((price or 0) * rate, 2)
 
-# -------------------------------------------------------------
-# Συνάρτηση Price Without Tax για όλες τις πλατφόρμες
-# -------------------------------------------------------------
 def compute_price_without_tax(price, nights, month):
     if not price or not nights:
         return 0.0
@@ -143,11 +152,16 @@ for b in all_bookings:
             "Month": arrival_dt.month
         })
 
-if not rows:
-    st.info(f"Δεν βρέθηκαν κρατήσεις για το διάστημα {from_date} έως {to_date}.")
-    st.stop()
+# -------------------------------------------------------------
+# Συγχώνευση με υπάρχουσες κρατήσεις και αποθήκευση
+# -------------------------------------------------------------
+new_df = pd.DataFrame(rows)
+if not existing_df.empty:
+    df = pd.concat([existing_df, new_df], ignore_index=True)
+else:
+    df = new_df
 
-df = pd.DataFrame(rows)
+df.to_excel(BOOKINGS_FILE, index=False)
 
 # -------------------------------------------------------------
 # Φίλτρο μήνα (sidebar)
