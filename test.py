@@ -154,10 +154,12 @@ for b in all_bookings:
         })
 
 # -------------------------------------------------------------
-# Συγχώνευση με υπάρχουσες κρατήσεις και αποθήκευση
+# Συγχώνευση με υπάρχουσες κρατήσεις και αποφυγή διπλών (βάσει ID)
 # -------------------------------------------------------------
 new_df = pd.DataFrame(rows)
+
 if not existing_df.empty:
+    new_df = new_df[~new_df['ID'].isin(existing_df['ID'])]
     df = pd.concat([existing_df, new_df], ignore_index=True)
 else:
     df = new_df
@@ -165,7 +167,7 @@ else:
 df.to_excel(BOOKINGS_FILE, index=False)
 
 # -------------------------------------------------------------
-# Φίλτρο μήνα (sidebar)
+# Το υπόλοιπο script για sidebar, κουτάκια και expenses
 # -------------------------------------------------------------
 st.sidebar.header("📅 Επιλογή Μήνα")
 months_el = {
@@ -184,9 +186,9 @@ else:
     filtered_df = df.copy()
 filtered_df = filtered_df.sort_values(["Month","Apartment","Arrival"])
 
-# -------------------------------------------------------------
+# ---------------------------
 # Session state & Excel για έξοδα
-# -------------------------------------------------------------
+# ---------------------------
 EXPENSES_FILE = "expenses.xlsx"
 
 if "expenses_df" not in st.session_state:
@@ -195,18 +197,12 @@ if "expenses_df" not in st.session_state:
     else:
         st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
-# -------------------------------------------------------------
-# Συνάρτηση parse για € amounts
-# -------------------------------------------------------------
 def parse_amount_euro(value):
     try:
         return float(str(value).replace(" €",""))
     except:
         return 0.0
 
-# -------------------------------------------------------------
-# Υπολογισμός totals ανά μήνα
-# -------------------------------------------------------------
 expenses_df = st.session_state["expenses_df"].copy()
 if "Month" not in expenses_df.columns or expenses_df.empty:
     expenses_df["Month"] = pd.Series(dtype=int)
@@ -229,7 +225,7 @@ else:
     total_owner_profit_after_expenses = net_owner_profit_by_month.sum()
 
 # ---------------------------
-# 1️⃣ Κουτάκια με συνολικά (τρία)
+# Κουτάκια συνολικών
 # ---------------------------
 col1, col2, col3 = st.columns(3)
 col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
@@ -237,13 +233,13 @@ col2.metric("🧾 Συνολικά Έξοδα", f"{total_expenses:.2f} €")
 col3.metric("📊 Συνολικό Κέρδος Ιδιοκτήτη", f"{total_owner_profit_after_expenses:.2f} €")
 
 # ---------------------------
-# 2️⃣ Πίνακας κρατήσεων
+# Πίνακας κρατήσεων
 # ---------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_month})")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 # ---------------------------
-# 3️⃣ Καταχώρηση & εμφάνιση εξόδων
+# Καταχώρηση & εμφάνιση εξόδων
 # ---------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
