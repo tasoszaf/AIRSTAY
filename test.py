@@ -74,6 +74,15 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.00
     return round((price or 0) * rate, 2)
 
+# -------------------------------------------------------------
+# Συνάρτηση Price Without Tax για όλες τις πλατφόρμες
+# -------------------------------------------------------------
+def compute_price_without_tax(price, nights, month):
+    if not price or not nights:
+        return 0.0
+    base = 2 if month in [11, 12, 1, 2] else 8
+    adjusted = price - base * nights
+    return round((adjusted / 1.13) - (adjusted * 0.005), 2)
 
 # -------------------------------------------------------------
 # 🧱 Δημιουργία DataFrame κρατήσεων
@@ -101,17 +110,12 @@ for b in all_bookings:
 
         platform_lower = platform.lower().strip() if platform else ""
 
-        # -------------------------------
-        # Τιμή για Expedia
-        # -------------------------------
+        # 🟢 Τιμή για Expedia
         if "expedia" in platform_lower:
-            price = price / 0.82  # διορθωμένη τιμή
-            price_wo_tax = round(price * 0.82, 2)  # Price Without Tax για Expedia
-        else:
-            # Τυπικός υπολογισμός για άλλες πλατφόρμες
-            base = 2 if arrival_dt.month in [11, 12, 1, 2] else 8
-            adjusted = price - base * days
-            price_wo_tax = round((adjusted / 1.13) - (adjusted * 0.005), 2)
+            price = price / 0.82  # Διόρθωση τιμής μόνο για Expedia
+
+        # 🟢 Καθαρή αξία για όλες τις πλατφόρμες
+        price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month)
 
         fee = compute_booking_fee(platform, price)
         owner_profit = round(price - fee, 2)
@@ -217,7 +221,7 @@ st.subheader(f"📅 Κρατήσεις ({selected_month})")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 # ---------------------------
-# 3️⃣ Καταχώρηση & εμφάνιση εξόδων (κάτω-κάτω)
+# 3️⃣ Καταχώρηση & εμφάνιση εξόδων
 # ---------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -242,7 +246,6 @@ with st.form("expenses_form", clear_on_submit=True):
             "Description": exp_description,
         }])
         st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
-        # Αυτόματη αποθήκευση σε Excel
         st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
 
 st.subheader("💸 Καταχωρημένα Έξοδα")
