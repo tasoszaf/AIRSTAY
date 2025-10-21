@@ -70,30 +70,9 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.15
     elif "expedia" in p:
         rate = 0.18
-    elif "tara" in p:
-        rate = 0.18
     else:
         rate = 0.00
     return round((price or 0) * rate, 2)
-
-
-# ΝΕΑ συνάρτηση Price Without Tax
-def adjusted_price_without_tax(price, nights, month, platform):
-    if not price or not nights:
-        return 0.0
-
-    # Αν είναι χειμώνας (Νοέμβριος, Δεκέμβριος, Ιανουάριος, Φεβρουάριος) => base=2, αλλιώς 8
-    base = 2 if month in [11, 12, 1, 2] else 8
-    p = platform.lower().strip() if platform else ""
-
-    if "expedia" in p:
-        adjusted = (price * 0.82) - (base * nights)
-        result = (adjusted / 1.13) - (adjusted * 0.005) + (price * 0.18)
-    else:
-        adjusted = price - (base * nights)
-        result = (adjusted / 1.13) - (adjusted * 0.005)
-
-    return round(result, 2)
 
 
 # -------------------------------------------------------------
@@ -120,9 +99,21 @@ for b in all_bookings:
         guests = adults + children
         days = max((departure_dt - arrival_dt).days, 0)
 
-        # Υπολογισμός fees & taxes
+        platform_lower = platform.lower().strip() if platform else ""
+
+        # -------------------------------
+        # Τιμή για Expedia
+        # -------------------------------
+        if "expedia" in platform_lower:
+            price = price / 0.82  # διορθωμένη τιμή
+            price_wo_tax = round(price * 0.82, 2)  # Price Without Tax για Expedia
+        else:
+            # Τυπικός υπολογισμός για άλλες πλατφόρμες
+            base = 2 if arrival_dt.month in [11, 12, 1, 2] else 8
+            adjusted = price - base * days
+            price_wo_tax = round((adjusted / 1.13) - (adjusted * 0.005), 2)
+
         fee = compute_booking_fee(platform, price)
-        price_wo_tax = adjusted_price_without_tax(price, days, arrival_dt.month, platform)
         owner_profit = round(price - fee, 2)
 
         rows.append({
@@ -136,7 +127,7 @@ for b in all_bookings:
             "Guests": guests,
             "Total Price": f"{round(price, 2):.2f} €",
             "Booking Fee": f"{fee:.2f} €",
-            "Price Without Tax": f"{price_wo_tax:.2f} €",  # ✅ Νέος υπολογισμός
+            "Price Without Tax": f"{price_wo_tax:.2f} €",
             "Owner Profit": f"{owner_profit:.2f} €",
             "Month": arrival_dt.month
         })
@@ -270,7 +261,6 @@ def display_expenses():
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
-            # Αυτόματη αποθήκευση μετά διαγραφή
             st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
             break
 
