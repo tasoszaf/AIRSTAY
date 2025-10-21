@@ -176,11 +176,11 @@ else:
 filtered_df = filtered_df.sort_values(["Month","Apartment","Arrival"])
 
 # ---------------------------
-# Υπολογισμός totals
+# Υπολογισμός totals με ασφαλή μετατροπή
 # ---------------------------
-total_price = filtered_df["Total Price"].sum()
-total_owner_profit = filtered_df["Owner Profit"].sum()
-total_airstay = filtered_df["Airstay Commission"].sum()
+total_price = pd.to_numeric(filtered_df["Total Price"], errors="coerce").sum()
+total_owner_profit = pd.to_numeric(filtered_df["Owner Profit"], errors="coerce").sum()
+total_airstay = pd.to_numeric(filtered_df["Airstay Commission"], errors="coerce").sum()
 
 col1, col2, col3 = st.columns(3)
 col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
