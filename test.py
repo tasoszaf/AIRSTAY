@@ -5,7 +5,7 @@ import os
 from datetime import datetime, date, timedelta
 
 # -------------------------------------------------------------
-# Streamlit setup
+# Ρυθμίσεις Streamlit
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
@@ -15,7 +15,7 @@ HEADERS = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 RES_URL = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# Apartments & Settings
+# Καταλύματα & Ρυθμίσεις
 # -------------------------------------------------------------
 APARTMENTS = {
     "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
@@ -89,7 +89,7 @@ def fetch_reservations(from_date, to_date):
             }
             while True:
                 try:
-                    r = requests.get(RES_URL, headers=HEADERS, params=params, timeout=20)
+                    r = requests.get(RES_URL, headers=HEADERS, params=params, timeout=25)
                     r.raise_for_status()
                     data = r.json()
                 except requests.exceptions.RequestException:
@@ -98,6 +98,7 @@ def fetch_reservations(from_date, to_date):
                 bookings = data.get("bookings", [])
                 if not bookings:
                     break
+
                 for b in bookings:
                     arrival = b.get("arrival")
                     departure = b.get("departure")
@@ -108,6 +109,8 @@ def fetch_reservations(from_date, to_date):
                     if arr_dt.year != 2025:
                         continue
 
+                    guest_name = b.get("guest-name") or b.get("guestName") or ""
+                    apartment_name = b.get("apartment", {}).get("name", apt_name)
                     platform = (b.get("channel") or {}).get("name") or "Direct"
                     price = float(b.get("price") or 0)
                     days = (dep_dt - arr_dt).days
@@ -122,8 +125,8 @@ def fetch_reservations(from_date, to_date):
 
                     all_rows.append({
                         "ID": b.get("id"),
-                        "Apartment": apt_name,
-                        "Guest Name": b.get("guestName") or "",
+                        "Apartment": apartment_name,
+                        "Guest Name": guest_name,
                         "Arrival": arr_dt.strftime("%Y-%m-%d"),
                         "Departure": dep_dt.strftime("%Y-%m-%d"),
                         "Days": days,
@@ -143,39 +146,46 @@ def fetch_reservations(from_date, to_date):
     return pd.DataFrame(all_rows)
 
 # -------------------------------------------------------------
-# Cache logic
+# Cache logic (με αυτόματο save στο τέλος κάθε μήνα)
 # -------------------------------------------------------------
 CACHE_FILE = "reservations_cache.xlsx"
 today = date.today()
 first_day_year = date(today.year, 1, 1)
 yesterday = today - timedelta(days=1)
 current_month_start = today.replace(day=1)
+previous_month = (current_month_start - timedelta(days=1)).month
 
 if not os.path.exists(CACHE_FILE):
     st.warning("📡 Πρώτη εκτέλεση: λήψη όλων των κρατήσεων έως και χθες...")
-    df_cache = fetch_reservations(first_day_year.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d"))
-    df_cache.to_excel(CACHE_FILE, index=False)
-    st.success(f"💾 Αποθηκεύτηκαν {len(df_cache)} κρατήσεις στο Excel (μέχρι {yesterday}).")
+    df_all = fetch_reservations(first_day_year.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d"))
+    df_to_save = df_all[df_all["Month"] < today.month]
+    df_to_save.to_excel(CACHE_FILE, index=False)
+    st.success(f"💾 Αποθηκεύτηκαν {len(df_to_save)} κρατήσεις μέχρι τον προηγούμενο μήνα.")
+    df = df_all
 else:
-    st.info("✅ Διαβάζονται οι κρατήσεις από το Excel...")
     df_cache = pd.read_excel(CACHE_FILE)
-
-    # Λήψη μόνο για τον τρέχοντα μήνα
     new_df = fetch_reservations(current_month_start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
-
-    # Συγχώνευση
     df = pd.concat([df_cache, new_df], ignore_index=True).drop_duplicates(subset=["ID"])
-    df.to_excel(CACHE_FILE, index=False)
-    st.success(f"🔄 Ενημερώθηκαν κρατήσεις. Σύνολο: {len(df)}")
 
-    df_cache = df
+    # 👉 Αν άλλαξε μήνας, αποθήκευσε κρατήσεις προηγούμενου μήνα
+    if not df_cache.empty:
+        max_month_in_cache = df_cache["Month"].max()
+        if max_month_in_cache < previous_month and today.day == 1:
+            to_save = df[df["Month"] == previous_month]
+            if not to_save.empty:
+                st.info("📦 Νέος μήνας: αποθήκευση κρατήσεων προηγούμενου μήνα στο Excel...")
+                updated = pd.concat([df_cache, to_save], ignore_index=True).drop_duplicates(subset=["ID"])
+                updated.to_excel(CACHE_FILE, index=False)
+                st.success(f"✅ Προστέθηκαν {len(to_save)} κρατήσεις του μήνα {previous_month} στο Excel!")
 
 # -------------------------------------------------------------
 # Streamlit UI
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Κατάλυμα")
-selected = st.sidebar.selectbox("Επιλογή", list(APARTMENTS.keys()))
-filtered = df_cache[df_cache["Apartment"]==selected].sort_values("Arrival")
+apartments_available = sorted(df["Apartment"].unique())
+selected = st.sidebar.selectbox("Επιλογή", apartments_available)
+
+filtered = df[df["Apartment"] == selected].sort_values("Arrival")
 
 month_names = {
     1:"Ιαν",2:"Φεβ",3:"Μαρ",4:"Απρ",5:"Μαι",6:"Ιουν",
