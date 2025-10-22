@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date, timedelta
-import os
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 
-# ---------------------- ΡΥΘΜΙΣΕΙΣ STREAMLIT ----------------------
+# ---------------------- ΡΥΘΜΙΣΕΙΣ ----------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
 
@@ -12,46 +12,17 @@ API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
-# ---------------------- CACHE ----------------------
-DATA_DIR = "cached_reservations"
-os.makedirs(DATA_DIR, exist_ok=True)
-
 # ---------------------- ΚΑΤΑΛΥΜΑΤΑ & ΡΥΘΜΙΣΕΙΣ ----------------------
 APARTMENTS = {
-    "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
-            1439931,1439933,1439935,1439937,1439939,1439971,1439973,1439975,1439977,
-            1439979,1439981,1439983,1439985],
+    "ZED": [1439913,1439915,1439917],
     "KOMOS": [2160281,2160286,2160291],
-    "CHELI": [2146456,2146461],
-    "AKALI": [1713746],
-    "NAMI": [1275248],
-    "THRESH": [563628,563631,1200587,563634,563637,563640,563643],
-    "ZILEAN": [1756004,1756007,1756010,1756013,1756016,1756019,1756022,1756025,1756031],
-    "NAUTILUS": [563712,563724,563718,563721,563715,563727],
-    "ANIVIA": [563703,563706],
-    "ELISE": [563625,1405415],
-    "ORIANNA": [1607131],
-    "KALISTA": [750921],
-    "JAAX": [2712218],
-    "FINIKAS": [2715193,2715198,2715203,2715208,2715213,
-                2715218,2715223,2715228,2715233,2715238,2715273]
+    "CHELI": [2146456,2146461]
 }
 
 APARTMENT_SETTINGS = {
     "ZED": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    "NAMI": {"winter_base": 4, "summer_base": 15, "airstay_commission": 0},
-    "THRESH": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
-    "KALISTA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
     "KOMOS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
     "CHELI": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    "AKALI": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0},
-    "ZILEAN": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
-    "NAUTILUS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.186},
-    "ANIVIA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
-    "ELISE": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
-    "ORIANNA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
-    "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0},
-    "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
 months_el = {
@@ -85,6 +56,7 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
     return round((price or 0)*rate, 2)
 
 # ---------------------- ΛΗΨΗ ΚΡΑΤΗΣΕΩΝ ----------------------
+@st.cache_data(ttl=3600)
 def fetch_reservations(apt_name):
     all_rows = []
     for apt_id in APARTMENTS[apt_name]:
@@ -116,14 +88,9 @@ def fetch_reservations(apt_name):
                 departure_str = b.get("departure")
                 if not arrival_str or not departure_str:
                     continue
-                try:
-                    arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
-                    departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
-                except:
-                    continue
+                arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
+                departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
                 if arrival_dt.date() > date.today() - timedelta(days=1):
-                    continue
-                if arrival_dt.year != 2025:
                     continue
 
                 platform = (b.get("channel") or {}).get("name") or "Direct booking"
@@ -160,62 +127,55 @@ def fetch_reservations(apt_name):
                     "Owner Profit": round(owner_profit,2),
                     "Month": arrival_dt.month
                 })
-
             if data.get("page") and data.get("page") < data.get("page_count",1):
                 params["page"] += 1
             else:
                 break
-
     return pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
 
 # ---------------------- Επιλογή Καταλύματος ----------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
-apartment_options = list(APARTMENTS.keys())
-selected_apartment = st.sidebar.selectbox("Κατάλυμα", apartment_options)
-
+selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 df_all = fetch_reservations(selected_apartment)
 
-# ---------------------- Inline Φίλτρο Μήνα ----------------------
-month_filter = st.multiselect(
-    "Φιλτράρισμα κατά μήνα",
-    options=[0]+list(range(1,13)),
-    format_func=lambda x: "Όλοι οι μήνες" if x==0 else months_el[x],
-    default=[0]
+# ---------------------- AgGrid - Inline φίλτρο ----------------------
+st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
+
+gb = GridOptionsBuilder.from_dataframe(df_all)
+gb.configure_default_column(editable=False, filter=True, sortable=True)
+gb.configure_column("Month", header_name="Μήνας", type=["numericColumn"], filter="agNumberColumnFilter")
+grid_options = gb.build()
+
+grid_response = AgGrid(
+    df_all,
+    gridOptions=grid_options,
+    height=400,
+    enable_enterprise_modules=False,
+    update_mode=GridUpdateMode.NO_UPDATE,
+    fit_columns_on_grid_load=True,
+    data_return_mode=DataReturnMode.FILTERED_AND_SORTED
 )
 
-if 0 in month_filter or not month_filter:
-    filtered_df = df_all.copy()
-else:
-    filtered_df = df_all[df_all["Month"].isin(month_filter)].copy()
+filtered_df = pd.DataFrame(grid_response['data'])
 
 # ---------------------- ΥΠΟΛΟΓΙΣΜΟΣ ΣΥΝΟΛΩΝ ----------------------
-def parse_amount(v):
-    try:
-        return float(str(v).replace("€","").strip())
-    except:
-        return 0.0
-
 total_price = filtered_df["Total Price"].sum()
 total_owner_profit = filtered_df["Owner Profit"].sum()
 total_booking_fee = filtered_df["Booking Fee"].sum()
 
-# ---------------------- METRICS ----------------------
 col1, col2, col3 = st.columns(3)
 col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
 col2.metric("🧾 Συνολικά Έξοδα", f"{total_booking_fee:.2f} €")
 col3.metric("📊 Κέρδος Ιδιοκτήτη", f"{total_owner_profit:.2f} €")
 
-# ---------------------- ΠΙΝΑΚΑΣ ΚΡΑΤΗΣΕΩΝ ----------------------
-st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
-st.dataframe(filtered_df.sort_values("Arrival"), use_container_width=True)
-
-# ---------------------- ΚΑΤΑΧΩΡΗΣΗ ΕΞΟΔΩΝ ----------------------
+# ---------------------- ΕΞΟΔΑ ----------------------
 EXPENSES_FILE = "expenses.xlsx"
 if "expenses_df" not in st.session_state:
     try:
         st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
     except:
         st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
+
 expenses_df = st.session_state["expenses_df"]
 
 st.subheader("💰 Καταχώρηση Εξόδων")
@@ -243,7 +203,7 @@ with st.form("expenses_form", clear_on_submit=True):
         st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
         st.experimental_rerun()
 
-# ---------------------- ΕΜΦΑΝΙΣΗ ΕΞΟΔΩΝ ----------------------
+# ---------------------- Εμφάνιση Εξόδων ----------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 def display_expenses(apartment):
     df_exp = st.session_state["expenses_df"]
