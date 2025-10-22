@@ -12,7 +12,7 @@ API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
-# ---------------------- ΦΑΚΕΛΟΣ CACHE ----------------------
+# ---------------------- CACHE ----------------------
 DATA_DIR = "cached_reservations"
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -105,7 +105,7 @@ months_el = {
 month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in range(1,13)]
 selected_month = st.selectbox("📅 Επιλογή Μήνα", month_options)
 
-# ---------------------- ΦΟΡΤΩΣΗ ΚΡΑΤΗΣΕΩΝ ----------------------
+# ---------------------- ΛΗΨΗ ΚΡΑΤΗΣΕΩΝ ----------------------
 def fetch_reservations_for_month(apt_name, month_idx):
     all_rows = []
     month_start = date(2025, month_idx, 1)
@@ -145,7 +145,6 @@ def fetch_reservations_for_month(apt_name, month_idx):
                     departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
                 except:
                     continue
-
                 if arrival_dt.year != 2025:
                     continue
 
@@ -155,12 +154,10 @@ def fetch_reservations_for_month(apt_name, month_idx):
                 children = int(b.get("children") or 0)
                 guests = adults + children
                 total_days = max((departure_dt - arrival_dt).days, 0)
-
                 if total_days == 0:
                     continue
 
-                platform_lower = platform.lower().strip()
-                if "expedia" in platform_lower:
+                if "expedia" in platform.lower():
                     price = price / 0.82
 
                 # --- Κόψιμο στο τέλος της 2ης ημέρας επόμενου μήνα
@@ -174,8 +171,10 @@ def fetch_reservations_for_month(apt_name, month_idx):
                     stay_month = day_cursor.month
                     next_day = day_cursor + timedelta(days=1)
 
+                    # Αν αλλάζει μήνας ή φτάνουμε τέλος κράτησης
                     if next_day.month != stay_month or next_day > departure_dt:
-                        nights_in_this_month = (min(departure_dt, datetime(2025, stay_month % 12 + 1, 1)) - day_cursor).days
+                        month_end = min(datetime(2025, stay_month % 12 + 1, 1), departure_dt)
+                        nights_in_this_month = (month_end - day_cursor).days
                         nights_in_this_month = max(nights_in_this_month, 1)
                         month_price = price_per_day * nights_in_this_month
                         month_price_wo_tax = compute_price_without_tax(month_price, nights_in_this_month, stay_month, apt_name)
