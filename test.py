@@ -79,41 +79,12 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.00
     return round((price or 0)*rate, 2)
 
-# ---------------------- CACHE ----------------------
-def load_cached_month(apt_name, month_idx):
-    file_path = os.path.join(DATA_DIR, f"{apt_name}_{month_idx:02d}.xlsx")
-    if os.path.exists(file_path):
-        try:
-            return pd.read_excel(file_path)
-        except:
-            return pd.DataFrame()
-    return pd.DataFrame()
-
-def save_month_cache(apt_name, month_idx, df):
-    file_path = os.path.join(DATA_DIR, f"{apt_name}_{month_idx:02d}.xlsx")
-    df.to_excel(file_path, index=False)
-
-# ---------------------- SIDEBAR ----------------------
-st.sidebar.header("🏠 Επιλογή Καταλύματος")
-apartment_options = list(APARTMENTS.keys())
-selected_apartment = st.sidebar.selectbox("Κατάλυμα", apartment_options)
-
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
-month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in range(1,13)]
-selected_month = st.selectbox("📅 Επιλογή Μήνα", month_options)
-
 # ---------------------- ΛΗΨΗ ΚΡΑΤΗΣΕΩΝ ----------------------
-def fetch_reservations_for_month(apt_name, month_idx):
+def fetch_reservations(apt_name):
     all_rows = []
-    month_start = date(2025, month_idx, 1)
-    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-    from_date = month_start.strftime("%Y-%m-%d")
-    to_date = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
-
     for apt_id in APARTMENTS[apt_name]:
+        from_date = "2025-01-01"
+        to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
         params = {
             "from": from_date,
             "to": to_date,
@@ -145,13 +116,10 @@ def fetch_reservations_for_month(apt_name, month_idx):
                     departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
                 except:
                     continue
-                if arrival_dt.year != 2025:
-                    continue
-                # Φιλτράρισμα μέχρι χθες
+                # μέχρι χθες
                 if arrival_dt.date() > date.today() - timedelta(days=1):
                     continue
-                # Φιλτράρισμα μήνα άφιξης
-                if arrival_dt.month != month_idx:
+                if arrival_dt.year != 2025:
                     continue
 
                 platform = (b.get("channel") or {}).get("name") or "Direct booking"
@@ -194,25 +162,14 @@ def fetch_reservations_for_month(apt_name, month_idx):
             else:
                 break
 
-    df = pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
-    return df
+    return pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
 
-# ---------------------- ΦΟΡΤΩΣΗ ΑΠΟ CACHE Ή API ----------------------
-if selected_month == "Όλοι οι μήνες":
-    dfs = []
-    for m in range(1,13):
-        df_month = load_cached_month(selected_apartment, m)
-        if df_month.empty:
-            df_month = fetch_reservations_for_month(selected_apartment, m)
-            save_month_cache(selected_apartment, m, df_month)
-        dfs.append(df_month)
-    filtered_df = pd.concat(dfs, ignore_index=True)
-else:
-    month_idx = [k for k,v in months_el.items() if v==selected_month][0]
-    filtered_df = load_cached_month(selected_apartment, month_idx)
-    if filtered_df.empty:
-        filtered_df = fetch_reservations_for_month(selected_apartment, month_idx)
-        save_month_cache(selected_apartment, month_idx, filtered_df)
+# ---------------------- Επιλογή Καταλύματος ----------------------
+st.sidebar.header("🏠 Επιλογή Καταλύματος")
+apartment_options = list(APARTMENTS.keys())
+selected_apartment = st.sidebar.selectbox("Κατάλυμα", apartment_options)
+
+filtered_df = fetch_reservations(selected_apartment)
 
 # ---------------------- ΕΞΟΔΑ ----------------------
 EXPENSES_FILE = "expenses.xlsx"
@@ -224,8 +181,6 @@ if "expenses_df" not in st.session_state:
 expenses_df = st.session_state["expenses_df"]
 
 filtered_expenses = expenses_df[expenses_df["Accommodation"]==selected_apartment]
-if selected_month != "Όλοι οι μήνες":
-    filtered_expenses = filtered_expenses[filtered_expenses["Month"]==month_idx]
 
 def parse_amount(v):
     try:
@@ -245,8 +200,8 @@ col2.metric("🧾 Συνολικά Έξοδα", f"{total_expenses:.2f} €")
 col3.metric("📊 Κέρδος Ιδιοκτήτη", f"{net_profit:.2f} €")
 
 # ---------------------- ΠΙΝΑΚΑΣ ΚΡΑΤΗΣΕΩΝ ----------------------
-st.subheader(f"📅 Κρατήσεις ({selected_apartment} – {selected_month})")
-st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
+st.dataframe(filtered_df.sort_values("Arrival"), use_container_width=True)
 
 # ---------------------- ΚΑΤΑΧΩΡΗΣΗ ΕΞΟΔΩΝ ----------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
@@ -276,12 +231,9 @@ with st.form("expenses_form", clear_on_submit=True):
 
 # ---------------------- ΕΜΦΑΝΙΣΗ ΕΞΟΔΩΝ ----------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
-def display_expenses(apartment, month):
+def display_expenses(apartment):
     df_exp = st.session_state["expenses_df"]
     df_exp = df_exp[df_exp["Accommodation"]==apartment]
-    if month != "Όλοι οι μήνες":
-        month_idx = [k for k,v in months_el.items() if v==month][0]
-        df_exp = df_exp[df_exp["Month"]==month_idx]
     if df_exp.empty:
         st.info("Δεν υπάρχουν έξοδα.")
         return
@@ -298,4 +250,4 @@ def display_expenses(apartment, month):
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
             st.experimental_rerun()
 
-display_expenses(selected_apartment, selected_month)
+display_expenses(selected_apartment)
