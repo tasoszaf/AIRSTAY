@@ -101,7 +101,7 @@ for apt_name, id_list in APARTMENTS.items():
             "to": to_date,
             "apartmentId": apt_id,
             "excludeBlocked": "true",
-            "showCancellation": "true",
+            "showCancellation": "false",
             "page": 1,
             "pageSize": 100,
         }
