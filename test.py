@@ -49,10 +49,6 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
-months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",
-             5:"Μάιος",6:"Ιούνιος",7:"Ιούλιος",8:"Αύγουστος",
-             9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
-
 # ---------------------- Συναρτήσεις ----------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     settings = APARTMENT_SETTINGS.get(apt_name, {"winter_base": 2, "summer_base": 8})
@@ -158,7 +154,7 @@ total_row = {
     "Month": ""
 }
 
-# ---------------------- AgGrid ----------------------
+# ---------------------- AgGrid με pinned row ----------------------
 st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
 gb = GridOptionsBuilder.from_dataframe(filtered_df)
 gb.configure_default_column(editable=False, filter=True, sortable=True)
@@ -169,7 +165,7 @@ AgGrid(
     filtered_df,
     gridOptions=grid_options,
     height=500,
-    enable_enterprise_modules=False,
+    enable_enterprise_modules=True,  # <--- χρειάζεται για pinned row
     update_mode=GridUpdateMode.NO_UPDATE,
     data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
     fit_columns_on_grid_load=True,
