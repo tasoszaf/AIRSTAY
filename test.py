@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import requests
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
-# ---------------------- ΡΥΘΜΙΣΕΙΣ ----------------------
+# ---------------------- Ρυθμίσεις ----------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
 
@@ -15,15 +15,40 @@ EXP_FILE = "reservations.xlsx"
 
 # ---------------------- Καταλύματα & Ρυθμίσεις ----------------------
 APARTMENTS = {
-    "ZED": [1439913,1439915,1439917],  # συντομευμένο για παράδειγμα
+    "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
+            1439931,1439933,1439935,1439937,1439939,1439971,1439973,1439975,1439977,
+            1439979,1439981,1439983,1439985],
     "KOMOS": [2160281,2160286,2160291],
-    # πρόσθεσε όλα τα υπόλοιπα...
+    "CHELI": [2146456,2146461],
+    "AKALI": [1713746],
+    "NAMI": [1275248],
+    "THRESH": [563628,563631,1200587,563634,563637,563640,563643],
+    "ZILEAN": [1756004,1756007,1756010,1756013,1756016,1756019,1756022,1756025,1756031],
+    "NAUTILUS": [563712,563724,563718,563721,563715,563727],
+    "ANIVIA": [563703,563706],
+    "ELISE": [563625,1405415],
+    "ORIANNA": [1607131],
+    "KALISTA": [750921],
+    "JAAX": [2712218],
+    "FINIKAS": [2715193,2715198,2715203,2715208,2715213,
+                2715218,2715223,2715228,2715233,2715238,2715273]
 }
 
 APARTMENT_SETTINGS = {
     "ZED": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "NAMI": {"winter_base": 4, "summer_base": 15, "airstay_commission": 0},
+    "THRESH": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
+    "KALISTA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
     "KOMOS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    # πρόσθεσε όλα τα υπόλοιπα...
+    "CHELI": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "AKALI": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0},
+    "ZILEAN": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
+    "NAUTILUS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.186},
+    "ANIVIA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
+    "ELISE": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
+    "ORIANNA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
+    "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0},
+    "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
 months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",
