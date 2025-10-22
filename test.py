@@ -54,6 +54,11 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
+months_el = {
+    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+}
+
 # ---------------------- ΣΥΝΑΡΤΗΣΕΙΣ ----------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     if not price or not nights:
@@ -116,7 +121,6 @@ def fetch_reservations(apt_name):
                     departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
                 except:
                     continue
-                # μέχρι χθες
                 if arrival_dt.date() > date.today() - timedelta(days=1):
                     continue
                 if arrival_dt.year != 2025:
@@ -169,19 +173,22 @@ st.sidebar.header("🏠 Επιλογή Καταλύματος")
 apartment_options = list(APARTMENTS.keys())
 selected_apartment = st.sidebar.selectbox("Κατάλυμα", apartment_options)
 
-filtered_df = fetch_reservations(selected_apartment)
+df_all = fetch_reservations(selected_apartment)
 
-# ---------------------- ΕΞΟΔΑ ----------------------
-EXPENSES_FILE = "expenses.xlsx"
-if "expenses_df" not in st.session_state:
-    try:
-        st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
-    except:
-        st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
-expenses_df = st.session_state["expenses_df"]
+# ---------------------- Inline Φίλτρο Μήνα ----------------------
+month_filter = st.multiselect(
+    "Φιλτράρισμα κατά μήνα",
+    options=[0]+list(range(1,13)),
+    format_func=lambda x: "Όλοι οι μήνες" if x==0 else months_el[x],
+    default=[0]
+)
 
-filtered_expenses = expenses_df[expenses_df["Accommodation"]==selected_apartment]
+if 0 in month_filter or not month_filter:
+    filtered_df = df_all.copy()
+else:
+    filtered_df = df_all[df_all["Month"].isin(month_filter)].copy()
 
+# ---------------------- ΥΠΟΛΟΓΙΣΜΟΣ ΣΥΝΟΛΩΝ ----------------------
 def parse_amount(v):
     try:
         return float(str(v).replace("€","").strip())
@@ -190,20 +197,27 @@ def parse_amount(v):
 
 total_price = filtered_df["Total Price"].sum()
 total_owner_profit = filtered_df["Owner Profit"].sum()
-total_expenses = filtered_expenses["Amount"].apply(parse_amount).sum()
-net_profit = total_owner_profit - total_expenses
+total_booking_fee = filtered_df["Booking Fee"].sum()
 
 # ---------------------- METRICS ----------------------
 col1, col2, col3 = st.columns(3)
 col1.metric("💰 Συνολική Τιμή Κρατήσεων", f"{total_price:.2f} €")
-col2.metric("🧾 Συνολικά Έξοδα", f"{total_expenses:.2f} €")
-col3.metric("📊 Κέρδος Ιδιοκτήτη", f"{net_profit:.2f} €")
+col2.metric("🧾 Συνολικά Έξοδα", f"{total_booking_fee:.2f} €")
+col3.metric("📊 Κέρδος Ιδιοκτήτη", f"{total_owner_profit:.2f} €")
 
 # ---------------------- ΠΙΝΑΚΑΣ ΚΡΑΤΗΣΕΩΝ ----------------------
 st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
 st.dataframe(filtered_df.sort_values("Arrival"), use_container_width=True)
 
 # ---------------------- ΚΑΤΑΧΩΡΗΣΗ ΕΞΟΔΩΝ ----------------------
+EXPENSES_FILE = "expenses.xlsx"
+if "expenses_df" not in st.session_state:
+    try:
+        st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
+    except:
+        st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
+expenses_df = st.session_state["expenses_df"]
+
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
     col1, col2, col3 = st.columns(3)
