@@ -11,6 +11,7 @@ st.title("Reservations Dashboard")
 API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
+EXP_FILE = "reservations.xlsx"
 
 # ---------------------- Καταλύματα & Ρυθμίσεις ----------------------
 APARTMENTS = {
@@ -75,64 +76,82 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.0
     return round((price or 0)*rate, 2)
 
-# ---------------------- Fetch για όλα τα καταλύματα ----------------------
-@st.cache_data(ttl=3600)
-def fetch_all_reservations():
-    all_rows = []
-    for apt_name, id_list in APARTMENTS.items():
-        for apt_id in id_list:
-            from_date = "2025-01-01"
-            to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
-            params = {"from": from_date, "to": to_date,
-                      "apartmentId": apt_id, "excludeBlocked": "true",
-                      "showCancellation": "true", "page": 1, "pageSize": 100}
-            while True:
-                try:
-                    r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
-                    r.raise_for_status()
-                    data = r.json()
-                except:
-                    break
-                bookings = data.get("bookings", [])
-                if not bookings: break
-                for b in bookings:
-                    arrival = b.get("arrival")
-                    departure = b.get("departure")
-                    if not arrival or not departure: continue
-                    arrival_dt = datetime.strptime(arrival, "%Y-%m-%d")
-                    departure_dt = datetime.strptime(departure, "%Y-%m-%d")
-                    if arrival_dt.date() > date.today() - timedelta(days=1): continue
-                    platform = (b.get("channel") or {}).get("name") or "Direct booking"
-                    price = float(b.get("price") or 0)
-                    days = max((departure_dt - arrival_dt).days, 0)
-                    if "expedia" in platform.lower(): price /= 0.82
-                    price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, apt_name)
-                    fee = compute_booking_fee(platform, price)
-                    settings = APARTMENT_SETTINGS.get(apt_name, {"airstay_commission":0.248})
-                    airstay_commission = round(price_wo_tax*settings["airstay_commission"],2)
-                    owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
-                    all_rows.append({
-                        "ID": b.get("id"),
-                        "Apartment": apt_name,
-                        "Guest Name": b.get("guestName") or b.get("guest-name"),
-                        "Arrival": arrival_dt.strftime("%Y-%m-%d"),
-                        "Departure": departure_dt.strftime("%Y-%m-%d"),
-                        "Days": days,
-                        "Platform": platform,
-                        "Total Price": round(price,2),
-                        "Booking Fee": round(fee,2),
-                        "Owner Profit": owner_profit,
-                        "Month": arrival_dt.month
-                    })
-                if data.get("page") and data.get("page") < data.get("page_count",1):
-                    params["page"] += 1
-                else: break
-    return pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
+# ---------------------- Φόρτωση Excel ----------------------
+try:
+    df_excel = pd.read_excel(EXP_FILE)
+except FileNotFoundError:
+    df_excel = pd.DataFrame(columns=["ID","Apartment","Guest Name","Arrival","Departure",
+                                     "Days","Platform","Total Price","Booking Fee",
+                                     "Owner Profit","Month"])
 
-df_all = fetch_all_reservations()
+# ---------------------- Sidebar επιλογής καταλύματος ----------------------
+selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+
+# ---------------------- Fetch API μόνο για τρέχοντα μήνα ----------------------
+today = date.today()
+first_day_month = today.replace(day=1).strftime("%Y-%m-%d")
+last_day_yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+
+all_rows = []
+
+for apt_id in APARTMENTS[selected_apartment]:
+    params = {
+        "from": first_day_month,
+        "to": last_day_yesterday,
+        "apartmentId": apt_id,
+        "excludeBlocked": "true",
+        "showCancellation": "true",
+        "page": 1,
+        "pageSize": 100,
+    }
+    while True:
+        try:
+            r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+        except:
+            break
+        bookings = data.get("bookings", [])
+        if not bookings:
+            break
+        for b in bookings:
+            arrival_dt = datetime.strptime(b.get("arrival"), "%Y-%m-%d")
+            departure_dt = datetime.strptime(b.get("departure"), "%Y-%m-%d")
+            platform = (b.get("channel") or {}).get("name") or "Direct booking"
+            price = float(b.get("price") or 0)
+            days = max((departure_dt - arrival_dt).days, 0)
+            if "expedia" in platform.lower(): price /= 0.82
+            price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, selected_apartment)
+            fee = compute_booking_fee(platform, price)
+            settings = APARTMENT_SETTINGS.get(selected_apartment, {"airstay_commission":0.248})
+            airstay_commission = round(price_wo_tax*settings["airstay_commission"],2)
+            owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
+            all_rows.append({
+                "ID": b.get("id"),
+                "Apartment": selected_apartment,
+                "Guest Name": b.get("guestName") or b.get("guest-name"),
+                "Arrival": arrival_dt.strftime("%Y-%m-%d"),
+                "Departure": departure_dt.strftime("%Y-%m-%d"),
+                "Days": days,
+                "Platform": platform,
+                "Total Price": round(price,2),
+                "Booking Fee": round(fee,2),
+                "Owner Profit": owner_profit,
+                "Month": arrival_dt.month
+            })
+
+df_current = pd.DataFrame(all_rows)
+
+# ---------------------- Συνένωση με Excel ----------------------
+df_all = pd.concat([df_excel[df_excel["Apartment"]==selected_apartment], df_current],
+                   ignore_index=True).drop_duplicates(subset=["ID"])
+
+# ---------------------- Αποθήκευση πίσω στο Excel ----------------------
+df_excel.update(df_all)  # Ενημέρωση παλιού DF
+df_excel.to_excel(EXP_FILE, index=False)
 
 # ---------------------- AgGrid ----------------------
-st.subheader("📅 Κρατήσεις για όλα τα καταλύματα")
+st.subheader(f"📅 Κρατήσεις για {selected_apartment}")
 
 gb = GridOptionsBuilder.from_dataframe(df_all)
 gb.configure_default_column(editable=False, filter=True, sortable=True)
@@ -151,7 +170,7 @@ grid_response = AgGrid(
     allow_unsafe_jscode=True
 )
 
-# ---------------------- Δυναμικά totals για φιλτραρισμένα δεδομένα ----------------------
+# ---------------------- Δυναμικά totals ----------------------
 if 'data' in grid_response and len(grid_response['data']) > 0:
     filtered_df = pd.DataFrame(grid_response['data'])
     total_row = {
