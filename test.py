@@ -243,14 +243,11 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         monthly_metrics[month]["Owner Profit"] += owner_profit_per_day
         monthly_metrics[month]["Total Expenses"] = expenses_total  # συνολικά έξοδα του μήνα
 
-# Δημιουργία πίνακα για εμφάνιση
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
-
+# Δημιουργία πίνακα για εμφάνιση μόνο μέχρι τον τρέχοντα μήνα
 table_rows = []
 for m in sorted(monthly_metrics.keys()):
+    if m > today.month:
+        continue  # παραλείπει μελλοντικούς μήνες
     data = monthly_metrics[m]
     table_rows.append({
         "Μήνας": months_el[m],
@@ -262,6 +259,7 @@ for m in sorted(monthly_metrics.keys()):
 metrics_table = pd.DataFrame(table_rows)
 st.subheader(f"📊 Συνολικά ανά Μήνα ({selected_apartment})")
 st.table(metrics_table)
+
 
 # -------------------------------------------------------------
 # Πίνακας κρατήσεων
