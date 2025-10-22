@@ -49,10 +49,6 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
-months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",
-             5:"Μάιος",6:"Ιούνιος",7:"Ιούλιος",8:"Αύγουστος",
-             9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
-
 # ---------------------- Συναρτήσεις ----------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     settings = APARTMENT_SETTINGS.get(apt_name, {"winter_base": 2, "summer_base": 8})
@@ -136,20 +132,12 @@ def fetch_all_reservations():
 # ---------------------- Φόρτωση δεδομένων ----------------------
 df_all = fetch_all_reservations()
 
-# ---------------------- Sidebar & φίλτρα ----------------------
+# ---------------------- Sidebar & φίλτρο καταλύματος ----------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
-apartment_options = ["Όλα"] + list(APARTMENTS.keys())
+apartment_options = list(APARTMENTS.keys())
 selected_apartment = st.sidebar.selectbox("Κατάλυμα", apartment_options)
 
-month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in range(1,13)]
-selected_month = st.sidebar.selectbox("📅 Επιλογή Μήνα", month_options)
-
-filtered_df = df_all.copy()
-if selected_apartment != "Όλα":
-    filtered_df = filtered_df[filtered_df["Apartment"]==selected_apartment]
-if selected_month != "Όλοι οι μήνες":
-    month_idx = [k for k,v in months_el.items() if v==selected_month][0]
-    filtered_df = filtered_df[filtered_df["Month"]==month_idx]
+filtered_df = df_all[df_all["Apartment"]==selected_apartment].copy()
 
 # ---------------------- Υπολογισμός totals για pinned row ----------------------
 total_row = {
@@ -167,9 +155,7 @@ total_row = {
 }
 
 # ---------------------- AgGrid ----------------------
-st.subheader(f"📅 Κρατήσεις ({selected_apartment} – {selected_month})")
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
-
+st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
 gb = GridOptionsBuilder.from_dataframe(filtered_df)
 gb.configure_default_column(editable=False, filter=True, sortable=True)
 gb.configure_column("Month", header_name="Μήνας")
