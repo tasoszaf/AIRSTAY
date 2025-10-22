@@ -244,6 +244,11 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         monthly_metrics[month]["Total Expenses"] = expenses_total  # συνολικά έξοδα του μήνα
 
 # Δημιουργία πίνακα για εμφάνιση μόνο μέχρι τον τρέχοντα μήνα
+months_el = {
+    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+}
+
 table_rows = []
 for m in sorted(monthly_metrics.keys()):
     if m > today.month:
