@@ -54,7 +54,7 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
-# ---------------------- ΣΥΝΑΡΤΗΣΕΙΣ ΥΠΟΛΟΓΙΣΜΟΥ ----------------------
+# ---------------------- ΣΥΝΑΡΤΗΣΕΙΣ ----------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     if not price or not nights:
         return 0.0
@@ -147,8 +147,11 @@ def fetch_reservations_for_month(apt_name, month_idx):
                     continue
                 if arrival_dt.year != 2025:
                     continue
-                # --- Φιλτράρισμα μέχρι χθες
+                # Φιλτράρισμα μέχρι χθες
                 if arrival_dt.date() > date.today() - timedelta(days=1):
+                    continue
+                # Φιλτράρισμα μήνα άφιξης
+                if arrival_dt.month != month_idx:
                     continue
 
                 platform = (b.get("channel") or {}).get("name") or "Direct booking"
