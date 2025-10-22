@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date, timedelta
+import os
 
 # -------------------------------------------------------------
 # Ρυθμίσεις Streamlit
@@ -37,7 +38,7 @@ APARTMENTS = {
 }
 
 # -------------------------------------------------------------
-# Ρυθμίσεις ανά κατάλυμα (βάσεις & προμήθειες Airstay)
+# Ρυθμίσεις ανά κατάλυμα
 # -------------------------------------------------------------
 APARTMENT_SETTINGS = {
     "ZED": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
@@ -57,10 +58,23 @@ APARTMENT_SETTINGS = {
 }
 
 # -------------------------------------------------------------
-# Ημερομηνίες
+# Caching δεδομένων κρατήσεων ανά μήνα
 # -------------------------------------------------------------
-from_date = "2025-01-01"
-to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+DATA_DIR = "cached_reservations"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+def load_cached_month(apt_name, month_idx):
+    file_path = os.path.join(DATA_DIR, f"{apt_name}_{month_idx:02d}.xlsx")
+    if os.path.exists(file_path):
+        try:
+            return pd.read_excel(file_path)
+        except:
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+def save_month_cache(apt_name, month_idx, df):
+    file_path = os.path.join(DATA_DIR, f"{apt_name}_{month_idx:02d}.xlsx")
+    df.to_excel(file_path, index=False)
 
 # -------------------------------------------------------------
 # Υπολογιστικές συναρτήσεις
@@ -90,95 +104,126 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
     return round((price or 0)*rate, 2)
 
 # -------------------------------------------------------------
-# Ανάκτηση κρατήσεων για όλα τα καταλύματα
-# -------------------------------------------------------------
-all_rows = []
-
-for apt_name, id_list in APARTMENTS.items():
-    for apt_id in id_list:
-        params = {
-            "from": from_date,
-            "to": to_date,
-            "apartmentId": apt_id,
-            "excludeBlocked": "true",
-            "showCancellation": "true",
-            "page": 1,
-            "pageSize": 100,
-        }
-        while True:
-            try:
-                r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
-                r.raise_for_status()
-                data = r.json()
-            except requests.exceptions.RequestException:
-                break
-
-            bookings = data.get("bookings", [])
-            if not bookings:
-                break
-
-            for b in bookings:
-                arrival_str = b.get("arrival")
-                departure_str = b.get("departure")
-                if not arrival_str or not departure_str:
-                    continue
-                try:
-                    arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
-                    departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
-                except:
-                    continue
-                if arrival_dt.year != 2025:
-                    continue
-
-                platform = (b.get("channel") or {}).get("name") or "Direct booking"
-                price = float(b.get("price") or 0)
-                adults = int(b.get("adults") or 0)
-                children = int(b.get("children") or 0)
-                guests = adults + children
-                days = max((departure_dt - arrival_dt).days, 0)
-
-                platform_lower = platform.lower().strip()
-                if "expedia" in platform_lower:
-                    price = price / 0.82
-
-                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, apt_name)
-                fee = compute_booking_fee(platform, price)
-                settings = APARTMENT_SETTINGS.get(apt_name, {"airstay_commission": 0.248})
-                airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
-                owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
-
-                all_rows.append({
-                    "ID": b.get("id"),
-                    "Apartment": apt_name,
-                    "Guest Name": b.get("guestName") or b.get("guest-name"),
-                    "Arrival": arrival_dt.strftime("%Y-%m-%d"),
-                    "Departure": departure_dt.strftime("%Y-%m-%d"),
-                    "Days": days,
-                    "Platform": platform,
-                    "Guests": guests,
-                    "Total Price": round(price,2),
-                    "Booking Fee": round(fee,2),
-                    "Price Without Tax": round(price_wo_tax,2),
-                    "Airstay Commission": round(airstay_commission,2),
-                    "Owner Profit": round(owner_profit,2),
-                    "Month": arrival_dt.month
-                })
-            
-            if data.get("page") and data.get("page") < data.get("page_count",1):
-                params["page"] += 1
-            else:
-                break
-
-df = pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
-
-# -------------------------------------------------------------
 # Sidebar επιλογής καταλύματος
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 apartment_options = list(APARTMENTS.keys())
 selected_apartment = st.sidebar.selectbox("Κατάλυμα", apartment_options)
 
-filtered_df = df[df["Apartment"]==selected_apartment].copy().sort_values(["Arrival"])
+# -------------------------------------------------------------
+# Dropdown επιλογής μήνα
+# -------------------------------------------------------------
+months_el = {
+    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+}
+month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in range(1,13)]
+selected_month = st.selectbox("📅 Επιλογή Μήνα", month_options)
+
+# -------------------------------------------------------------
+# Ανάκτηση κρατήσεων με caching
+# -------------------------------------------------------------
+if selected_month != "Όλοι οι μήνες":
+    month_idx = [k for k,v in months_el.items() if v==selected_month][0]
+else:
+    month_idx = None
+
+st.info("⏳ Φόρτωση δεδομένων κρατήσεων...")
+
+if month_idx:
+    cached_df = load_cached_month(selected_apartment, month_idx)
+    if not cached_df.empty:
+        df = cached_df.copy()
+        st.success(f"✅ Φορτώθηκαν δεδομένα {selected_month} από cache!")
+    else:
+        all_rows = []
+        month_start = date(2025, month_idx, 1)
+        next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        from_date = month_start.strftime("%Y-%m-%d")
+        to_date = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        for apt_id in APARTMENTS[selected_apartment]:
+            params = {
+                "from": from_date,
+                "to": to_date,
+                "apartmentId": apt_id,
+                "excludeBlocked": "true",
+                "showCancellation": "true",
+                "page": 1,
+                "pageSize": 100,
+            }
+            while True:
+                try:
+                    r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
+                    r.raise_for_status()
+                    data = r.json()
+                except requests.exceptions.RequestException:
+                    break
+
+                bookings = data.get("bookings", [])
+                if not bookings:
+                    break
+
+                for b in bookings:
+                    arrival_str = b.get("arrival")
+                    departure_str = b.get("departure")
+                    if not arrival_str or not departure_str:
+                        continue
+                    try:
+                        arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
+                        departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
+                    except:
+                        continue
+                    if arrival_dt.year != 2025:
+                        continue
+
+                    platform = (b.get("channel") or {}).get("name") or "Direct booking"
+                    price = float(b.get("price") or 0)
+                    adults = int(b.get("adults") or 0)
+                    children = int(b.get("children") or 0)
+                    guests = adults + children
+                    days = max((departure_dt - arrival_dt).days, 0)
+
+                    if "expedia" in platform.lower():
+                        price = price / 0.82
+
+                    price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, selected_apartment)
+                    fee = compute_booking_fee(platform, price)
+                    settings = APARTMENT_SETTINGS.get(selected_apartment, {"airstay_commission": 0.248})
+                    airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
+                    owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
+
+                    all_rows.append({
+                        "ID": b.get("id"),
+                        "Apartment": selected_apartment,
+                        "Guest Name": b.get("guestName") or b.get("guest-name"),
+                        "Arrival": arrival_dt.strftime("%Y-%m-%d"),
+                        "Departure": departure_dt.strftime("%Y-%m-%d"),
+                        "Days": days,
+                        "Platform": platform,
+                        "Guests": guests,
+                        "Total Price": round(price,2),
+                        "Booking Fee": round(fee,2),
+                        "Price Without Tax": round(price_wo_tax,2),
+                        "Airstay Commission": round(airstay_commission,2),
+                        "Owner Profit": round(owner_profit,2),
+                        "Month": arrival_dt.month
+                    })
+
+                if data.get("page") and data.get("page") < data.get("page_count",1):
+                    params["page"] += 1
+                else:
+                    break
+
+        df = pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
+        save_month_cache(selected_apartment, month_idx, df)
+        st.success(f"💾 Αποθηκεύτηκαν δεδομένα cache για {selected_month}!")
+else:
+    cached_files = [f for f in os.listdir(DATA_DIR) if f.startswith(selected_apartment)]
+    dfs = [pd.read_excel(os.path.join(DATA_DIR, f)) for f in cached_files]
+    df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    if df.empty:
+        st.warning("⚠️ Δεν υπάρχουν cache δεδομένα. Επέλεξε μήνα για πρώτη λήψη μέσω API.")
 
 # -------------------------------------------------------------
 # Εξοδα / Session State
@@ -193,19 +238,12 @@ if "expenses_df" not in st.session_state:
 expenses_df = st.session_state["expenses_df"]
 
 # -------------------------------------------------------------
-# Dropdown επιλογής μήνα πάνω από metrics
+# Φιλτράρισμα δεδομένων για εμφάνιση
 # -------------------------------------------------------------
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
-month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in range(1,13)]
-selected_month = st.selectbox("📅 Επιλογή Μήνα", month_options)
-
+filtered_df = df[df["Apartment"]==selected_apartment].copy().sort_values(["Arrival"])
 filtered_expenses = expenses_df[expenses_df["Accommodation"]==selected_apartment]
 
-if selected_month != "Όλοι οι μήνες":
-    month_idx = [k for k,v in months_el.items() if v==selected_month][0]
+if month_idx:
     filtered_df = filtered_df[filtered_df["Month"]==month_idx]
     filtered_expenses = filtered_expenses[filtered_expenses["Month"]==month_idx]
 
@@ -263,6 +301,8 @@ with st.form("expenses_form", clear_on_submit=True):
             "Description": exp_description
         }])
         st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
+        st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
+        st.success("✅ Το έξοδο καταχωρήθηκε!")
 
 # -------------------------------------------------------------
 # Εμφάνιση εξόδων
@@ -289,6 +329,7 @@ def display_expenses(apartment, month):
         if cols[5].button("🗑️", key=f"del_{i}"):
             st.session_state["expenses_df"].drop(i, inplace=True)
             st.session_state["expenses_df"].reset_index(drop=True, inplace=True)
+            st.session_state["expenses_df"].to_excel(EXPENSES_FILE, index=False)
             st.experimental_rerun()
 
 display_expenses(selected_apartment, selected_month)
