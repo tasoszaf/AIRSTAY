@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 import requests
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # ---------------------- ΡΥΘΜΙΣΕΙΣ ----------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
@@ -12,7 +11,7 @@ API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
-# ---------------------- Καταλύματα & Ρυθμίσεις ----------------------
+# ---------------------- Καταλύματα ----------------------
 APARTMENTS = {
     "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
             1439931,1439933,1439935,1439937,1439939,1439971,1439973,1439975,1439977,
@@ -48,6 +47,10 @@ APARTMENT_SETTINGS = {
     "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0},
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
+
+months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",
+             5:"Μάιος",6:"Ιούνιος",7:"Ιούλιος",8:"Αύγουστος",
+             9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
 
 # ---------------------- Συναρτήσεις ----------------------
 def compute_price_without_tax(price, nights, month, apt_name):
@@ -89,10 +92,8 @@ def fetch_all_reservations():
                     data = r.json()
                 except:
                     break
-
                 bookings = data.get("bookings", [])
                 if not bookings: break
-
                 for b in bookings:
                     arrival = b.get("arrival")
                     departure = b.get("departure")
@@ -109,7 +110,6 @@ def fetch_all_reservations():
                     settings = APARTMENT_SETTINGS.get(apt_name, {"airstay_commission":0.248})
                     airstay_commission = round(price_wo_tax*settings["airstay_commission"],2)
                     owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
-
                     all_rows.append({
                         "ID": b.get("id"),
                         "Apartment": apt_name,
@@ -120,45 +120,50 @@ def fetch_all_reservations():
                         "Platform": platform,
                         "Total Price": round(price,2),
                         "Booking Fee": round(fee,2),
-                        "Owner Profit": owner_profit
+                        "Owner Profit": owner_profit,
+                        "Month": months_el[arrival_dt.month]
                     })
-
                 if data.get("page") and data.get("page") < data.get("page_count",1):
                     params["page"] += 1
                 else: break
     return pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
 
+# ---------------------- Φόρτωση δεδομένων ----------------------
 df_all = fetch_all_reservations()
 
+# ---------------------- Sidebar επιλογής καταλύματος ----------------------
+st.sidebar.header("🏠 Επιλογή Καταλύματος")
+selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+
+filtered_df = df_all[df_all["Apartment"]==selected_apartment].copy()
+
 # ---------------------- Προσθήκη γραμμής totals ----------------------
-if not df_all.empty:
-    totals = {col: "" for col in df_all.columns}
-    totals["Apartment"] = "Σύνολα"
-    totals["Days"] = df_all["Days"].sum()
-    totals["Total Price"] = df_all["Total Price"].sum()
-    totals["Booking Fee"] = df_all["Booking Fee"].sum()
-    totals["Owner Profit"] = df_all["Owner Profit"].sum()
-    df_all = pd.concat([df_all, pd.DataFrame([totals])], ignore_index=True)
+total_row = {
+    "ID": "",
+    "Apartment": "Σύνολα",
+    "Guest Name": "",
+    "Arrival": "",
+    "Departure": "",
+    "Days": filtered_df["Days"].sum(),
+    "Platform": "",
+    "Total Price": filtered_df["Total Price"].sum(),
+    "Booking Fee": filtered_df["Booking Fee"].sum(),
+    "Owner Profit": filtered_df["Owner Profit"].sum(),
+    "Month": ""
+}
+filtered_df = pd.concat([filtered_df, pd.DataFrame([total_row])], ignore_index=True)
 
 # ---------------------- Εμφάνιση πίνακα ----------------------
-gb = GridOptionsBuilder.from_dataframe(df_all)
-gb.configure_default_column(editable=False, filter=True, sortable=True)
-grid_options = gb.build()
-
-st.subheader("📅 Κρατήσεις Όλων των Καταλυμάτων")
-AgGrid(
-    df_all,
-    gridOptions=grid_options,
-    height=600,
-    enable_enterprise_modules=False,
-    update_mode=GridUpdateMode.NO_UPDATE,
-    data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-    fit_columns_on_grid_load=True
-)
+st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
+st.dataframe(filtered_df, use_container_width=True)
 
 # ---------------------- Καταχώρηση εξόδων ----------------------
+EXPENSES_FILE = "expenses.xlsx"
 if "expenses_df" not in st.session_state:
-    st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Accommodation","Category","Amount","Description"])
+    try:
+        st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
+    except:
+        st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Accommodation","Category","Amount","Description"])
 
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -172,7 +177,6 @@ with st.form("expenses_form", clear_on_submit=True):
     exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
     exp_description = st.text_input("Περιγραφή (προαιρετική)")
     submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
-
     if submitted:
         new_row = pd.DataFrame([{
             "Date": exp_date.strftime("%Y-%m-%d"),
@@ -186,6 +190,7 @@ with st.form("expenses_form", clear_on_submit=True):
 # ---------------------- Εμφάνιση εξόδων ----------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 df_exp = st.session_state["expenses_df"]
+df_exp = df_exp[df_exp["Accommodation"]==selected_apartment]
 if df_exp.empty:
     st.info("Δεν υπάρχουν έξοδα.")
 else:
