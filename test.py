@@ -147,60 +147,44 @@ def fetch_reservations_for_month(apt_name, month_idx):
                     continue
                 if arrival_dt.year != 2025:
                     continue
+                # --- Φιλτράρισμα μέχρι χθες
+                if arrival_dt.date() > date.today() - timedelta(days=1):
+                    continue
 
                 platform = (b.get("channel") or {}).get("name") or "Direct booking"
                 price = float(b.get("price") or 0)
                 adults = int(b.get("adults") or 0)
                 children = int(b.get("children") or 0)
                 guests = adults + children
-                total_days = max((departure_dt - arrival_dt).days, 0)
-                if total_days == 0:
+                days = max((departure_dt - arrival_dt).days, 0)
+                if days == 0:
                     continue
 
                 if "expedia" in platform.lower():
                     price = price / 0.82
 
-                # --- Κόψιμο στο τέλος της 2ης ημέρας επόμενου μήνα
-                cutoff_date = (next_month + timedelta(days=1))
-                if departure_dt > cutoff_date:
-                    departure_dt = cutoff_date
+                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, apt_name)
+                fee = compute_booking_fee(platform, price)
+                settings = APARTMENT_SETTINGS.get(apt_name, {"airstay_commission": 0.248})
+                airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
+                owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
 
-                price_per_day = price / total_days
-                day_cursor = arrival_dt
-                while day_cursor < departure_dt:
-                    stay_month = day_cursor.month
-                    next_day = day_cursor + timedelta(days=1)
-
-                    # Αν αλλάζει μήνας ή φτάνουμε τέλος κράτησης
-                    if next_day.month != stay_month or next_day > departure_dt:
-                        month_end = min(datetime(2025, stay_month % 12 + 1, 1), departure_dt)
-                        nights_in_this_month = (month_end - day_cursor).days
-                        nights_in_this_month = max(nights_in_this_month, 1)
-                        month_price = price_per_day * nights_in_this_month
-                        month_price_wo_tax = compute_price_without_tax(month_price, nights_in_this_month, stay_month, apt_name)
-                        fee = compute_booking_fee(platform, month_price)
-                        settings = APARTMENT_SETTINGS.get(apt_name, {"airstay_commission": 0.248})
-                        airstay_commission = round(month_price_wo_tax * settings["airstay_commission"], 2)
-                        owner_profit = round(month_price_wo_tax - fee - airstay_commission, 2)
-
-                        all_rows.append({
-                            "ID": f"{b.get('id')}_{stay_month}",
-                            "Apartment": apt_name,
-                            "Guest Name": b.get("guestName") or b.get("guest-name"),
-                            "Arrival": arrival_dt.strftime("%Y-%m-%d"),
-                            "Departure": departure_dt.strftime("%Y-%m-%d"),
-                            "Days": nights_in_this_month,
-                            "Platform": platform,
-                            "Guests": guests,
-                            "Total Price": round(month_price,2),
-                            "Booking Fee": round(fee,2),
-                            "Price Without Tax": round(month_price_wo_tax,2),
-                            "Airstay Commission": round(airstay_commission,2),
-                            "Owner Profit": round(owner_profit,2),
-                            "Month": stay_month
-                        })
-
-                    day_cursor = next_day
+                all_rows.append({
+                    "ID": b.get("id"),
+                    "Apartment": apt_name,
+                    "Guest Name": b.get("guestName") or b.get("guest-name"),
+                    "Arrival": arrival_dt.strftime("%Y-%m-%d"),
+                    "Departure": departure_dt.strftime("%Y-%m-%d"),
+                    "Days": days,
+                    "Platform": platform,
+                    "Guests": guests,
+                    "Total Price": round(price,2),
+                    "Booking Fee": round(fee,2),
+                    "Price Without Tax": round(price_wo_tax,2),
+                    "Airstay Commission": round(airstay_commission,2),
+                    "Owner Profit": round(owner_profit,2),
+                    "Month": arrival_dt.month
+                })
 
             if data.get("page") and data.get("page") < data.get("page_count",1):
                 params["page"] += 1
@@ -208,8 +192,6 @@ def fetch_reservations_for_month(apt_name, month_idx):
                 break
 
     df = pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
-    yesterday = date.today() - timedelta(days=1)
-    df = df[pd.to_datetime(df["Arrival"]) <= pd.Timestamp(yesterday)]
     return df
 
 # ---------------------- ΦΟΡΤΩΣΗ ΑΠΟ CACHE Ή API ----------------------
