@@ -29,8 +29,7 @@ APARTMENTS = {
     "ORIANNA": [1607131],
     "KALISTA": [750921],
     "JAAX": [2712218],
-    "FINIKAS": [2715193,2715198,2715203,2715208,2715213,
-                2715218,2715223,2715228,2715233,2715238,2715273]
+    "FINIKAS": [2715193,2715198,2715203,2715208,2715213,2715218,2715223,2715228,2715233,2715238,2715273]
 }
 
 APARTMENT_SETTINGS = {
@@ -62,7 +61,7 @@ def compute_price_without_tax(price, nights, month, apt_name):
     return round((adjusted / 1.13) - (adjusted * 0.005), 2)
 
 def compute_booking_fee(platform_name: str, price: float) -> float:
-    p = platform_name.strip().lower()
+    p = platform_name.strip().lower() if platform_name else ''
     if p in {"website","direct","direct booking","direct-booking","site","web"}:
         rate = 0.0
     elif "booking" in p:
@@ -73,16 +72,17 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.18
     else:
         rate = 0.0
-    return round((price or 0)*rate, 2)
+    return round((price or 0) * rate, 2)
 
-# ---------------------- Fetch για όλα τα καταλύματα ----------------------
+# ---------------------- Fetch κρατήσεων ----------------------
 @st.cache_data(ttl=3600)
 def fetch_all_reservations():
     all_rows = []
+    from_date = "2025-01-01"
+    to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+
     for apt_name, id_list in APARTMENTS.items():
         for apt_id in id_list:
-            from_date = "2025-01-01"
-            to_date = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
             params = {"from": from_date, "to": to_date,
                       "apartmentId": apt_id, "excludeBlocked": "true",
                       "showCancellation": "true", "page": 1, "pageSize": 100}
@@ -93,8 +93,10 @@ def fetch_all_reservations():
                     data = r.json()
                 except:
                     break
+
                 bookings = data.get("bookings", [])
                 if not bookings: break
+
                 for b in bookings:
                     arrival = b.get("arrival")
                     departure = b.get("departure")
@@ -111,6 +113,7 @@ def fetch_all_reservations():
                     settings = APARTMENT_SETTINGS.get(apt_name, {"airstay_commission":0.248})
                     airstay_commission = round(price_wo_tax*settings["airstay_commission"],2)
                     owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
+
                     all_rows.append({
                         "ID": b.get("id"),
                         "Apartment": apt_name,
@@ -124,12 +127,29 @@ def fetch_all_reservations():
                         "Owner Profit": owner_profit,
                         "Month": arrival_dt.month
                     })
+
                 if data.get("page") and data.get("page") < data.get("page_count",1):
                     params["page"] += 1
                 else: break
     return pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
 
+# ---------------------- Φόρτωση δεδομένων ----------------------
 df_all = fetch_all_reservations()
+
+# ---------------------- Sidebar & φίλτρα ----------------------
+st.sidebar.header("🏠 Επιλογή Καταλύματος")
+apartment_options = ["Όλα"] + list(APARTMENTS.keys())
+selected_apartment = st.sidebar.selectbox("Κατάλυμα", apartment_options)
+
+month_options = ["Όλοι οι μήνες"] + [months_el[m] for m in range(1,13)]
+selected_month = st.sidebar.selectbox("📅 Επιλογή Μήνα", month_options)
+
+filtered_df = df_all.copy()
+if selected_apartment != "Όλα":
+    filtered_df = filtered_df[filtered_df["Apartment"]==selected_apartment]
+if selected_month != "Όλοι οι μήνες":
+    month_idx = [k for k,v in months_el.items() if v==selected_month][0]
+    filtered_df = filtered_df[filtered_df["Month"]==month_idx]
 
 # ---------------------- Υπολογισμός totals για pinned row ----------------------
 total_row = {
@@ -138,31 +158,30 @@ total_row = {
     "Guest Name": "",
     "Arrival": "",
     "Departure": "",
-    "Days": df_all["Days"].sum(),
+    "Days": filtered_df["Days"].sum(),
     "Platform": "",
-    "Total Price": df_all["Total Price"].sum(),
-    "Booking Fee": df_all["Booking Fee"].sum(),
-    "Owner Profit": df_all["Owner Profit"].sum(),
+    "Total Price": filtered_df["Total Price"].sum(),
+    "Booking Fee": filtered_df["Booking Fee"].sum(),
+    "Owner Profit": filtered_df["Owner Profit"].sum(),
     "Month": ""
 }
 
 # ---------------------- AgGrid ----------------------
-st.subheader("📅 Κρατήσεις για όλα τα καταλύματα")
+st.subheader(f"📅 Κρατήσεις ({selected_apartment} – {selected_month})")
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
-gb = GridOptionsBuilder.from_dataframe(df_all)
+gb = GridOptionsBuilder.from_dataframe(filtered_df)
 gb.configure_default_column(editable=False, filter=True, sortable=True)
-gb.configure_column("Month", header_name="Μήνας", type=["numericColumn"], filter="agNumberColumnFilter")
-gb.configure_column("Apartment", header_name="Κατάλυμα", filter=True)
+gb.configure_column("Month", header_name="Μήνας")
 grid_options = gb.build()
 
-grid_response = AgGrid(
-    df_all,
+AgGrid(
+    filtered_df,
     gridOptions=grid_options,
     height=500,
     enable_enterprise_modules=False,
     update_mode=GridUpdateMode.NO_UPDATE,
     data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
     fit_columns_on_grid_load=True,
-    allow_unsafe_jscode=True,
-    pinnedBottomRowData=[total_row]  # <-- totals ως extra γραμμή
+    pinnedBottomRowData=[total_row]
 )
