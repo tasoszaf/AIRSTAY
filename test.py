@@ -149,4 +149,59 @@ if not filtered_df.empty:
 
 # ---------------------- Εμφάνιση πίνακα κρατήσεων ----------------------
 st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
-gb = GridOptionsBuilder
+gb = GridOptionsBuilder.from_dataframe(filtered_df)
+gb.configure_default_column(editable=False, filter=True, sortable=True)
+gb.configure_column("Month", header_name="Μήνας")
+grid_options = gb.build()
+
+AgGrid(
+    filtered_df,
+    gridOptions=grid_options,
+    height=500,
+    enable_enterprise_modules=False,  # Δεν χρειάζεται enterprise για totals ως γραμμή
+    update_mode=GridUpdateMode.NO_UPDATE,
+    data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+    fit_columns_on_grid_load=True
+)
+
+# ---------------------- Καταχώρηση εξόδων ----------------------
+EXPENSES_FILE = "expenses.xlsx"
+if "expenses_df" not in st.session_state:
+    try:
+        st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
+    except:
+        st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Accommodation","Category","Amount","Description"])
+
+st.subheader("💰 Καταχώρηση Εξόδων")
+with st.form("expenses_form", clear_on_submit=True):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        exp_date = st.date_input("Ημερομηνία", value=date.today())
+    with col2:
+        exp_accommodation = st.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+    with col3:
+        exp_category = st.selectbox("Κατηγορία", ["Cleaning","Linen","Maintenance","Utilities","Supplies"])
+    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
+    exp_description = st.text_input("Περιγραφή (προαιρετική)")
+    submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
+
+    if submitted:
+        new_row = pd.DataFrame([{
+            "Date": exp_date.strftime("%Y-%m-%d"),
+            "Accommodation": exp_accommodation,
+            "Category": exp_category,
+            "Amount": exp_amount,
+            "Description": exp_description
+        }])
+        st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
+
+# ---------------------- Εμφάνιση εξόδων ----------------------
+st.subheader("💸 Καταχωρημένα Έξοδα")
+df_exp = st.session_state["expenses_df"]
+df_exp_filtered = df_exp[df_exp["Accommodation"]==selected_apartment]
+
+if df_exp_filtered.empty:
+    st.info("Δεν υπάρχουν έξοδα.")
+else:
+    st.dataframe(df_exp_filtered, use_container_width=True)
+
