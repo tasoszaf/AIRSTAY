@@ -81,7 +81,7 @@ def fetch_all_reservations():
         for apt_id in id_list:
             params = {"from": from_date, "to": to_date,
                       "apartmentId": apt_id, "excludeBlocked": "true",
-                      "showCancellation": "true", "page": 1, "pageSize": 100}
+                      "showCancellation": "false", "page": 1, "pageSize": 100}
             while True:
                 try:
                     r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
