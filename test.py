@@ -49,6 +49,10 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
+months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",
+             5:"Μάιος",6:"Ιούνιος",7:"Ιούλιος",8:"Αύγουστος",
+             9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
+
 # ---------------------- Συναρτήσεις ----------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     settings = APARTMENT_SETTINGS.get(apt_name, {"winter_base": 2, "summer_base": 8})
@@ -171,3 +175,43 @@ AgGrid(
     fit_columns_on_grid_load=True,
     pinnedBottomRowData=[total_row]
 )
+
+# ---------------------- Καταχώρηση εξόδων ----------------------
+EXPENSES_FILE = "expenses.xlsx"
+if "expenses_df" not in st.session_state:
+    try:
+        st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
+    except:
+        st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Accommodation","Category","Amount","Description"])
+
+st.subheader("💰 Καταχώρηση Εξόδων")
+with st.form("expenses_form", clear_on_submit=True):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        exp_date = st.date_input("Ημερομηνία", value=date.today())
+    with col2:
+        exp_accommodation = st.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+    with col3:
+        exp_category = st.selectbox("Κατηγορία", ["Cleaning","Linen","Maintenance","Utilities","Supplies"])
+    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
+    exp_description = st.text_input("Περιγραφή (προαιρετική)")
+    submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
+
+    if submitted:
+        new_row = pd.DataFrame([{
+            "Date": exp_date.strftime("%Y-%m-%d"),
+            "Accommodation": exp_accommodation,
+            "Category": exp_category,
+            "Amount": exp_amount,
+            "Description": exp_description
+        }])
+        st.session_state["expenses_df"] = pd.concat([st.session_state["expenses_df"], new_row], ignore_index=True)
+
+# ---------------------- Εμφάνιση εξόδων ----------------------
+st.subheader("💸 Καταχωρημένα Έξοδα")
+df_exp = st.session_state["expenses_df"]
+df_exp = df_exp[df_exp["Accommodation"]==selected_apartment]
+if df_exp.empty:
+    st.info("Δεν υπάρχουν έξοδα.")
+else:
+    st.dataframe(df_exp, use_container_width=True)
