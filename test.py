@@ -81,7 +81,7 @@ def fetch_all_reservations():
         for apt_id in id_list:
             params = {"from": from_date, "to": to_date,
                       "apartmentId": apt_id, "excludeBlocked": "true",
-                      "showCancellation": "false", "page": 1, "pageSize": 100}
+                      "showCancellation": "true", "page": 1, "pageSize": 100}
             while True:
                 try:
                     r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
@@ -120,8 +120,7 @@ def fetch_all_reservations():
                         "Platform": platform,
                         "Total Price": round(price,2),
                         "Booking Fee": round(fee,2),
-                        "Owner Profit": owner_profit,
-                        "Month": arrival_dt.month
+                        "Owner Profit": owner_profit
                     })
 
                 if data.get("page") and data.get("page") < data.get("page_count",1):
@@ -129,48 +128,37 @@ def fetch_all_reservations():
                 else: break
     return pd.DataFrame(all_rows).drop_duplicates(subset=["ID"])
 
-# ---------------------- Φόρτωση δεδομένων ----------------------
 df_all = fetch_all_reservations()
 
-# ---------------------- Sidebar & φίλτρο καταλύματος ----------------------
-st.sidebar.header("🏠 Επιλογή Καταλύματος")
-selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-filtered_df = df_all[df_all["Apartment"]==selected_apartment].copy()
-
 # ---------------------- Προσθήκη γραμμής totals ----------------------
-if not filtered_df.empty:
-    totals = {col: "" for col in filtered_df.columns}
+if not df_all.empty:
+    totals = {col: "" for col in df_all.columns}
     totals["Apartment"] = "Σύνολα"
-    totals["Days"] = filtered_df["Days"].sum()
-    totals["Total Price"] = filtered_df["Total Price"].sum()
-    totals["Booking Fee"] = filtered_df["Booking Fee"].sum()
-    totals["Owner Profit"] = filtered_df["Owner Profit"].sum()
-    filtered_df = pd.concat([filtered_df, pd.DataFrame([totals])], ignore_index=True)
+    totals["Days"] = df_all["Days"].sum()
+    totals["Total Price"] = df_all["Total Price"].sum()
+    totals["Booking Fee"] = df_all["Booking Fee"].sum()
+    totals["Owner Profit"] = df_all["Owner Profit"].sum()
+    df_all = pd.concat([df_all, pd.DataFrame([totals])], ignore_index=True)
 
-# ---------------------- Εμφάνιση πίνακα κρατήσεων ----------------------
-st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
-gb = GridOptionsBuilder.from_dataframe(filtered_df)
+# ---------------------- Εμφάνιση πίνακα ----------------------
+gb = GridOptionsBuilder.from_dataframe(df_all)
 gb.configure_default_column(editable=False, filter=True, sortable=True)
-gb.configure_column("Month", header_name="Μήνας")
 grid_options = gb.build()
 
+st.subheader("📅 Κρατήσεις Όλων των Καταλυμάτων")
 AgGrid(
-    filtered_df,
+    df_all,
     gridOptions=grid_options,
-    height=500,
-    enable_enterprise_modules=False,  # Δεν χρειάζεται enterprise για totals ως γραμμή
+    height=600,
+    enable_enterprise_modules=False,
     update_mode=GridUpdateMode.NO_UPDATE,
     data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
     fit_columns_on_grid_load=True
 )
 
 # ---------------------- Καταχώρηση εξόδων ----------------------
-EXPENSES_FILE = "expenses.xlsx"
 if "expenses_df" not in st.session_state:
-    try:
-        st.session_state["expenses_df"] = pd.read_excel(EXPENSES_FILE)
-    except:
-        st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Accommodation","Category","Amount","Description"])
+    st.session_state["expenses_df"] = pd.DataFrame(columns=["Date","Accommodation","Category","Amount","Description"])
 
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -198,10 +186,7 @@ with st.form("expenses_form", clear_on_submit=True):
 # ---------------------- Εμφάνιση εξόδων ----------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 df_exp = st.session_state["expenses_df"]
-df_exp_filtered = df_exp[df_exp["Accommodation"]==selected_apartment]
-
-if df_exp_filtered.empty:
+if df_exp.empty:
     st.info("Δεν υπάρχουν έξοδα.")
 else:
-    st.dataframe(df_exp_filtered, use_container_width=True)
-
+    st.dataframe(df_exp, use_container_width=True)
