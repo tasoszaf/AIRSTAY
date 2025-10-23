@@ -330,4 +330,3 @@ def display_expenses(apartment, month):
             st.experimental_rerun()
 
 display_expenses(selected_apartment, selected_month)
-
