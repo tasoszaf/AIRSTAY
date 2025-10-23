@@ -8,32 +8,42 @@ import base64
 import json
 
 # -------------------------------------------------------------
-# Ρυθμίσεις Streamlit
+# Streamlit Setup
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
 
 # -------------------------------------------------------------
-# GitHub Setup
+# GitHub Config
 # -------------------------------------------------------------
-GITHUB_TOKEN = "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"  # PAT με δικαιώματα repo
-GITHUB_USER = "<tasoszaf>"
-GITHUB_REPO = "<AIRSTAY>"
+GITHUB_USER = "<tasoszaf>"  # Βάλε το username σου
+GITHUB_REPO = "<AIRSTAY>"      # Βάλε το repo σου
 GITHUB_BRANCH = "main"
+GITHUB_TOKEN = "<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>"  # PAT με δικαιώματα repo
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/"
 
 RESERVATIONS_FILE = "reservations.xlsx"
 EXPENSES_FILE = "expenses.xlsx"
 
-def load_from_github(file_name):
+# -------------------------------------------------------------
+# Load from GitHub
+# -------------------------------------------------------------
+def load_from_github(file_name, required_columns):
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/{file_name}"
     try:
         r = requests.get(url)
         r.raise_for_status()
-        return pd.read_excel(BytesIO(r.content))
+        df = pd.read_excel(BytesIO(r.content))
     except:
-        return pd.DataFrame()  # αν δεν υπάρχει, επιστρέφει άδειο
+        df = pd.DataFrame()
+    for col in required_columns:
+        if col not in df.columns:
+            df[col] = pd.Series(dtype="object")
+    return df
 
+# -------------------------------------------------------------
+# Upload to GitHub
+# -------------------------------------------------------------
 def upload_to_github(file_path, repo_path):
     with open(file_path, "rb") as f:
         content = base64.b64encode(f.read()).decode()
@@ -42,18 +52,25 @@ def upload_to_github(file_path, repo_path):
     r = requests.get(url, headers=headers)
     sha = r.json()["sha"] if r.status_code == 200 else None
     data = {"message": f"Update {file_path}", "content": content, "branch": GITHUB_BRANCH}
-    if sha: data["sha"] = sha
+    if sha:
+        data["sha"] = sha
     r = requests.put(url, headers=headers, data=json.dumps(data))
     return r.status_code, r.json()
 
 # -------------------------------------------------------------
-# Φόρτωση Excel από GitHub ή κενά DataFrames
+# Columns
 # -------------------------------------------------------------
-reservations_df = load_from_github(RESERVATIONS_FILE)
-expenses_df = load_from_github(EXPENSES_FILE)
+reservation_columns = ["ID","Apartment","Guest Name","Arrival","Departure","Days",
+                       "Platform","Guests","Total Price","Booking Fee",
+                       "Price Without Tax","Airstay Commission","Owner Profit","Month"]
+expense_columns = ["Date","Month","Accommodation","Category","Amount","Description"]
+
+# Load DataFrames
+reservations_df = load_from_github(RESERVATIONS_FILE, reservation_columns)
+expenses_df = load_from_github(EXPENSES_FILE, expense_columns)
 
 # -------------------------------------------------------------
-# Καταλύματα & IDs
+# Apartments & Settings
 # -------------------------------------------------------------
 APARTMENTS = {
     "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
@@ -93,19 +110,22 @@ APARTMENT_SETTINGS = {
 }
 
 # -------------------------------------------------------------
-# Ημερομηνίες
+# Dates
 # -------------------------------------------------------------
 today = date.today()
 first_day_of_month = today.replace(day=1)
 last_month = (first_day_of_month - timedelta(days=1)).month
 last_month_year = (first_day_of_month - timedelta(days=1)).year
 
+# -------------------------------------------------------------
+# Smoobu API Settings
+# -------------------------------------------------------------
 API_KEY = "<your_smoobu_api_key>"
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# Υπολογιστικές συναρτήσεις
+# Utility Functions
 # -------------------------------------------------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     if not price or not nights:
@@ -138,16 +158,20 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Ανάκτηση κρατήσεων από Smoobu
+# Sidebar - Select Apartment
+# -------------------------------------------------------------
+st.sidebar.header("🏠 Επιλογή Καταλύματος")
+selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+
+# -------------------------------------------------------------
+# Load / Fetch Smoobu Reservations (Μέχρι τον προηγούμενο μήνα)
 # -------------------------------------------------------------
 all_rows = []
-
 if reservations_df.empty:
     from_date = "2025-01-01"
-    to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
 else:
     from_date = first_day_of_month.strftime("%Y-%m-%d")
-    to_date = today.strftime("%Y-%m-%d")
+to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
 
 for apt_name, id_list in APARTMENTS.items():
     for apt_id in id_list:
@@ -222,31 +246,15 @@ for apt_name, id_list in APARTMENTS.items():
             else:
                 break
 
-# Συνένωση και αποθήκευση Excel
+# Merge και αποθήκευση
 if all_rows:
     reservations_df = pd.concat([reservations_df, pd.DataFrame(all_rows)], ignore_index=True)
     reservations_df.drop_duplicates(subset=["ID"], inplace=True)
     reservations_df.to_excel(RESERVATIONS_FILE, index=False)
     upload_to_github(RESERVATIONS_FILE, RESERVATIONS_FILE)
 
-# Αποθήκευση προηγούμενου μήνα
-if today.day == 1:
-    prev_month_df = reservations_df[
-        (pd.to_datetime(reservations_df["Arrival"]).dt.month <= last_month) &
-        (pd.to_datetime(reservations_df["Arrival"]).dt.year <= last_month_year)
-    ]
-    prev_month_df.to_excel(RESERVATIONS_FILE, index=False)
-    upload_to_github(RESERVATIONS_FILE, RESERVATIONS_FILE)
-
 # -------------------------------------------------------------
-# Sidebar επιλογής καταλύματος
-# -------------------------------------------------------------
-st.sidebar.header("🏠 Επιλογή Καταλύματος")
-apartment_options = list(APARTMENTS.keys())
-selected_apartment = st.sidebar.selectbox("Κατάλυμα", apartment_options)
-
-# -------------------------------------------------------------
-# Αναλογική κατανομή κρατήσεων ανά μήνα
+# Υπολογισμός μηνιαίων metrics
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
@@ -272,9 +280,10 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         monthly_metrics[month]["Total Expenses"] = expenses_total
 
 # Δημιουργία πίνακα
-months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",
-             5:"Μάιος",6:"Ιούνιος",7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",
-             10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
+months_el = {
+    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+}
 
 table_rows = []
 for m in sorted(monthly_metrics.keys()):
@@ -328,7 +337,7 @@ with st.form("expenses_form", clear_on_submit=True):
         expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
         expenses_df.to_excel(EXPENSES_FILE, index=False)
         upload_to_github(EXPENSES_FILE, EXPENSES_FILE)
-        st.session_state["expenses_df"] = expenses_df
+        st.experimental_rerun()
 
 # -------------------------------------------------------------
 # Εμφάνιση εξόδων
