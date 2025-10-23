@@ -164,14 +164,20 @@ st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
 # -------------------------------------------------------------
-# Load / Fetch Smoobu Reservations (Μέχρι τον προηγούμενο μήνα)
+# Load / Fetch Smoobu Reservations
 # -------------------------------------------------------------
 all_rows = []
+
+# Πρώτη φορά; fetch όλο ιστορικό
 if reservations_df.empty:
     from_date = "2025-01-01"
+    to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    fetch_full_history = True
 else:
+    # Μετέπειτα, μόνο τρέχον μήνας
     from_date = first_day_of_month.strftime("%Y-%m-%d")
-to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    to_date = today.strftime("%Y-%m-%d")
+    fetch_full_history = False
 
 for apt_name, id_list in APARTMENTS.items():
     for apt_id in id_list:
@@ -205,6 +211,10 @@ for apt_name, id_list in APARTMENTS.items():
                     arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
                     departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
                 except:
+                    continue
+
+                # Αν αρχικό fetch, κρατάμε μόνο μέχρι τον προηγούμενο μήνα
+                if fetch_full_history and (arrival_dt.month > last_month and arrival_dt.year == last_month_year):
                     continue
 
                 platform = (b.get("channel") or {}).get("name") or "Direct booking"
@@ -246,7 +256,7 @@ for apt_name, id_list in APARTMENTS.items():
             else:
                 break
 
-# Merge και αποθήκευση
+# Συνένωση με υπάρχον DataFrame και αποθήκευση
 if all_rows:
     reservations_df = pd.concat([reservations_df, pd.DataFrame(all_rows)], ignore_index=True)
     reservations_df.drop_duplicates(subset=["ID"], inplace=True)
