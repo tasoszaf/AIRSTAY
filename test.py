@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 
 # -------------------------------------------------------------
-# Ρυθμίσεις Streamlit
+# Streamlit Config
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
@@ -15,7 +15,7 @@ headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# Καταλύματα & IDs
+# Καταλύματα & Settings
 # -------------------------------------------------------------
 APARTMENTS = {
     "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
@@ -115,7 +115,7 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Ανάκτηση κρατήσεων από Smoobu για νέες/τρέχοντα μηνών
+# Ανάκτηση νέων κρατήσεων από Smoobu
 # -------------------------------------------------------------
 all_rows = []
 
@@ -202,11 +202,21 @@ if all_rows:
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+
 # -------------------------------------------------------------
-# Υπολογισμός συνολικών metrics με κατανομή ανά ημέρα για σωστή μέθοδο ανά μήνα
+# Ονόματα μηνών για εμφανή labels
+# -------------------------------------------------------------
+months_el = {
+    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+}
+
+# -------------------------------------------------------------
+# Υπολογισμός αναλογικών metrics ανά μήνα
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
+# Κατανομή κρατήσεων ανά ημέρα/μήνα
 for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment].iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
@@ -221,28 +231,31 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         month = day.month
         if month > today.month:
             continue  # αγνοούμε μελλοντικούς μήνες
-        df_exp_month = expenses_df[
-            (expenses_df["Month"]==month) & 
-            (expenses_df["Accommodation"]==selected_apartment)
-        ]
-        expenses_total = df_exp_month["Amount"].apply(parse_amount).sum()
         monthly_metrics[month]["Total Price"] += price_per_day
         monthly_metrics[month]["Owner Profit"] += owner_profit_per_day
-        monthly_metrics[month]["Total Expenses"] = expenses_total
 
-# Υπολογισμός συνολικών metrics για όλα τα μήνες μέχρι σήμερα
-total_price = sum([v["Total Price"] for v in monthly_metrics.values()])
-total_expenses = sum([v["Total Expenses"] for v in monthly_metrics.values()])
-total_owner_profit = sum([v["Owner Profit"] for v in monthly_metrics.values()]) - total_expenses
+# Προσθήκη εξόδων ανά μήνα
+for month in range(1, today.month+1):
+    df_exp_month = expenses_df[
+        (expenses_df["Month"]==month) & 
+        (expenses_df["Accommodation"]==selected_apartment)
+    ]
+    expenses_total = df_exp_month["Amount"].apply(parse_amount).sum()
+    monthly_metrics[month]["Total Expenses"] = expenses_total
 
-metrics_table = pd.DataFrame([{
-    "Συνολική Τιμή Κρατήσεων": f"{total_price:.2f} €",
-    "Συνολικά Έξοδα": f"{total_expenses:.2f} €",
-    "Καθαρό Κέρδος Ιδιοκτήτη": f"{total_owner_profit:.2f} €"
-}])
+# Δημιουργία DataFrame για εμφάνιση
+monthly_table = pd.DataFrame([
+    {
+        "Μήνας": months_el[m],
+        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
+        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
+    }
+    for m,v in sorted(monthly_metrics.items())
+])
 
-st.subheader(f"📊 Συνολικά Metrics ({selected_apartment})")
-st.table(metrics_table)
+st.subheader(f"📊 Metrics ανά μήνα ({selected_apartment})")
+st.table(monthly_table)
 
 # -------------------------------------------------------------
 # Εμφάνιση όλων των κρατήσεων
@@ -290,3 +303,4 @@ if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα.")
 else:
     st.dataframe(filtered_expenses.sort_values("Date"), use_container_width=True, hide_index=True)
+
