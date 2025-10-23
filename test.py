@@ -2,27 +2,19 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date, timedelta
-import os
-import subprocess
 
 # -------------------------------------------------------------
 # ΡΥΘΜΙΣΕΙΣ STREAMLIT
 # -------------------------------------------------------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
-st.title("📊 Smoobu Reservations Dashboard")
+st.title("📊 Smoobu Reservations Dashboard (Live API)")
 
 # -------------------------------------------------------------
-# API & GITHUB ΡΥΘΜΙΣΕΙΣ
+# SMOOBU API ΡΥΘΜΙΣΕΙΣ
 # -------------------------------------------------------------
 SMOOBU_API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 HEADERS = {"Api-Key": SMOOBU_API_KEY, "Content-Type": "application/json"}
 RESERVATIONS_URL = "https://login.smoobu.com/api/reservations"
-
-GITHUB_ENABLED = True  # Βάλε False αν δε θες push
-GITHUB_REPO_PATH = "https://github.com/tasoszaf/AIRSTAY"  # <-- Βάλε path του repo σου
-
-RES_FILE = "reservations.xlsx"
-EXP_FILE = "expenses.xlsx"
 
 # -------------------------------------------------------------
 # ΚΑΤΑΛΥΜΑΤΑ & ΡΥΘΜΙΣΕΙΣ
@@ -69,10 +61,7 @@ APARTMENT_SETTINGS = {
 # -------------------------------------------------------------
 today = date.today()
 first_day_year = date(today.year, 1, 1)
-first_day_month = today.replace(day=1)
 yesterday = today - timedelta(days=1)
-last_month = (first_day_month - timedelta(days=1)).month
-last_month_year = (first_day_month - timedelta(days=1)).year
 
 # -------------------------------------------------------------
 # ΥΠΟΛΟΓΙΣΤΙΚΕΣ ΣΥΝΑΡΤΗΣΕΙΣ
@@ -93,8 +82,9 @@ def compute_booking_fee(platform, price):
     return round(price * r, 2)
 
 # -------------------------------------------------------------
-# ΑΝΑΚΤΗΣΗ ΚΡΑΤΗΣΕΩΝ ΑΠΟ API
+# ΑΝΑΚΤΗΣΗ ΚΡΑΤΗΣΕΩΝ ΑΠΟ SMOOBU
 # -------------------------------------------------------------
+@st.cache_data(ttl=3600)
 def fetch_reservations(from_date, to_date):
     all_rows = []
     for apt, ids in APARTMENTS.items():
@@ -133,42 +123,18 @@ def fetch_reservations(from_date, to_date):
                     "Owner Profit": owner,
                     "Month": arr_dt.month,
                 })
-    return pd.DataFrame(all_rows)
+    df = pd.DataFrame(all_rows)
+    return df
 
 # -------------------------------------------------------------
-# ΦΟΡΤΩΣΗ Ή ΑΝΑΚΤΗΣΗ ΚΡΑΤΗΣΕΩΝ
+# ΦΕΡΝΕΙ ΟΛΕΣ ΤΙΣ ΚΡΑΤΗΣΕΙΣ ΕΩΣ ΧΘΕΣ
 # -------------------------------------------------------------
-if not os.path.exists(RES_FILE):
-    st.info("🔄 Πρώτη εκτέλεση – γίνεται ανάκτηση όλων των κρατήσεων από 1/1 έως χθες...")
-    df_all = fetch_reservations(first_day_year.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d"))
-else:
-    df_all = pd.read_excel(RES_FILE)
-    df_current = fetch_reservations(first_day_month.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d"))
-    df_all = pd.concat([df_all, df_current]).drop_duplicates(subset=["ID"])
+st.info("🔄 Φόρτωση κρατήσεων από Smoobu API...")
+df_all = fetch_reservations(first_day_year.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d"))
+st.success(f"✅ Φορτώθηκαν {len(df_all)} κρατήσεις έως {yesterday.strftime('%d/%m/%Y')}")
 
 # -------------------------------------------------------------
-# ΑΠΟΘΗΚΕΥΣΗ ΕΩΣ ΠΡΟΗΓΟΥΜΕΝΟ ΜΗΝΑ
-# -------------------------------------------------------------
-df_to_save = df_all[pd.to_datetime(df_all["Arrival"]) < first_day_month]
-df_to_save.to_excel(RES_FILE, index=False)
-
-# -------------------------------------------------------------
-# PUSH ΣΤΟ GITHUB
-# -------------------------------------------------------------
-if GITHUB_ENABLED:
-    try:
-        os.chdir(GITHUB_REPO_PATH)
-        subprocess.run(["git", "config", "user.name", GIT_USER_NAME])
-        subprocess.run(["git", "config", "user.email", GIT_USER_EMAIL])
-        subprocess.run(["git", "add", RES_FILE])
-        subprocess.run(["git", "commit", "-m", f"Auto-update reservations until {last_month}/{last_month_year}"])
-        subprocess.run(["git", "push"])
-        st.success("✅ Ενημερώθηκε και στάλθηκε στο GitHub.")
-    except Exception as e:
-        st.warning(f"⚠️ Σφάλμα GitHub push: {e}")
-
-# -------------------------------------------------------------
-# STREAMLIT UI
+# UI: ΕΠΙΛΟΓΗ ΚΑΤΑΛΥΜΑΤΟΣ
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_apt = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
@@ -183,13 +149,7 @@ st.dataframe(filtered, use_container_width=True, hide_index=True)
 # -------------------------------------------------------------
 total_income = df_all["Total Price"].sum()
 total_owner = df_all["Owner Profit"].sum()
-
-if os.path.exists(EXP_FILE):
-    exp_df = pd.read_excel(EXP_FILE)
-    total_expenses = exp_df["Amount"].sum()
-else:
-    total_expenses = 0.0
-
+total_expenses = 0.0  # Μπορείς να προσθέσεις σύνδεση με API εξόδων ή χειροκίνητα
 net_profit = total_owner - total_expenses
 
 # -------------------------------------------------------------
