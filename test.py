@@ -161,16 +161,8 @@ for apt_name, id_list in APARTMENTS.items():
                 except:
                     continue
 
-                # Guest Name
-                guest_name = None
-                if "guest-name" in b and b["guest-name"]:
-                    guest_name = b["guest-name"]
-                elif "guestName" in b and b["guestName"]:
-                    guest_name = b["guestName"]
-                elif "guest" in b and isinstance(b["guest"], dict) and "name" in b["guest"]:
-                    guest_name = b["guest"]["name"]
-                else:
-                    guest_name = "Unknown"
+                # Guest Name από guest-name
+                guest_name = b.get("guest-name", "Unknown")
 
                 # Platform & Price
                 platform = (b.get("channel") or {}).get("name") or "Direct booking"
