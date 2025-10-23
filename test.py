@@ -120,7 +120,7 @@ last_month_year = (first_day_of_month - timedelta(days=1)).year
 # -------------------------------------------------------------
 # Smoobu API Settings
 # -------------------------------------------------------------
-API_KEY = "<your_smoobu_api_key>"
+API_KEY = "<3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R>"
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
