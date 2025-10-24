@@ -58,7 +58,6 @@ APARTMENT_SETTINGS = {
 # Ημερομηνίες
 # -------------------------------------------------------------
 today = date.today()
-from_date = "2025-01-01"
 to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
@@ -115,9 +114,17 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Ανάκτηση κρατήσεων του 2025 (check-in 1/1/2025 έως και χθες)
+# Ανάκτηση νέων κρατήσεων μετά την τελευταία στο Excel
 # -------------------------------------------------------------
 all_rows = []
+
+if not reservations_df.empty:
+    last_checkin_date = pd.to_datetime(reservations_df["Arrival"]).max().date()
+    from_date = (last_checkin_date + timedelta(days=1)).strftime("%Y-%m-%d")
+else:
+    from_date = "2025-01-01"
+
+st.info(f"📅 Φόρτωση κρατήσεων από {from_date} έως {to_date}")
 
 for apt_name, id_list in APARTMENTS.items():
     for apt_id in id_list:
@@ -130,14 +137,13 @@ for apt_name, id_list in APARTMENTS.items():
             "page": 1,
             "pageSize": 100,
         }
-
         while True:
             try:
                 r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
                 r.raise_for_status()
                 data = r.json()
             except requests.exceptions.RequestException as e:
-                st.warning(f"⚠️ Σφάλμα κατά την ανάκτηση κρατήσεων για {apt_name}: {e}")
+                st.warning(f"⚠️ Σφάλμα για {apt_name}: {e}")
                 break
 
             bookings = data.get("bookings", [])
@@ -203,9 +209,9 @@ if all_rows:
     combined_df.drop_duplicates(subset=["ID"], inplace=True)
     combined_df.to_excel(RESERVATIONS_FILE, index=False)
     reservations_df = combined_df.copy()
-    st.success("✅ Οι κρατήσεις ενημερώθηκαν και αποθηκεύτηκαν στο Excel!")
+    st.success(f"✅ Προστέθηκαν {len(new_df)} νέες κρατήσεις και αποθηκεύτηκαν στο Excel!")
 else:
-    st.info("Δεν εντοπίστηκαν νέες κρατήσεις από το Smoobu.")
+    st.info("Δεν υπάρχουν νέες κρατήσεις για ενημέρωση.")
 
 # -------------------------------------------------------------
 # Sidebar επιλογής καταλύματος
@@ -222,7 +228,7 @@ months_el = {
 }
 
 # -------------------------------------------------------------
-# Υπολογισμός αναλογικών metrics ανά μήνα
+# Υπολογισμός metrics ανά μήνα
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
