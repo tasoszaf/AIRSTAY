@@ -58,6 +58,7 @@ APARTMENT_SETTINGS = {
 # Ημερομηνίες
 # -------------------------------------------------------------
 today = date.today()
+from_date = "2025-01-01"
 to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
@@ -94,7 +95,7 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Φόρτωση Excel ή δημιουργία κενού DataFrame
+# Φόρτωση Excel ή κενά DataFrames
 # -------------------------------------------------------------
 RESERVATIONS_FILE = "reservations.xlsx"
 EXPENSES_FILE = "expenses.xlsx"
@@ -114,15 +115,9 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Φόρτωση ΝΕΩΝ κρατήσεων από Smoobu (μόνο μετά την τελευταία στο Excel)
+# Φόρτωση ΟΛΩΝ των κρατήσεων από Smoobu (2025-01-01 έως χθες)
 # -------------------------------------------------------------
 all_rows = []
-
-if not reservations_df.empty:
-    last_checkin_date = pd.to_datetime(reservations_df["Arrival"]).max().date()
-    from_date = (last_checkin_date + timedelta(days=1)).strftime("%Y-%m-%d")
-else:
-    from_date = "2025-01-01"
 
 st.info(f"📅 Φόρτωση κρατήσεων από {from_date} έως {to_date}")
 
@@ -203,118 +198,9 @@ for apt_name, id_list in APARTMENTS.items():
                 break
 
 if all_rows:
-    new_df = pd.DataFrame(all_rows)
-    combined_df = pd.concat([reservations_df, new_df], ignore_index=True)
-    combined_df.drop_duplicates(subset=["ID"], inplace=True)
-    combined_df.to_excel(RESERVATIONS_FILE, index=False)
-    reservations_df = combined_df.copy()
-    st.success(f"✅ Προστέθηκαν {len(new_df)} νέες κρατήσεις και αποθηκεύτηκαν στο Excel!")
+    reservations_df = pd.DataFrame(all_rows)
+    reservations_df.drop_duplicates(subset=["ID"], inplace=True)
+    reservations_df.to_excel(RESERVATIONS_FILE, index=False)
+    st.success(f"✅ Αποθηκεύτηκαν όλες οι κρατήσεις στο Excel ({len(reservations_df)}).")
 else:
-    st.info("Δεν υπάρχουν νέες κρατήσεις για ενημέρωση.")
-
-# -------------------------------------------------------------
-# Sidebar επιλογής καταλύματος
-# -------------------------------------------------------------
-st.sidebar.header("🏠 Επιλογή Καταλύματος")
-selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-
-# -------------------------------------------------------------
-# Ονόματα μηνών για εμφανή labels
-# -------------------------------------------------------------
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
-
-# -------------------------------------------------------------
-# Υπολογισμός αναλογικών metrics ανά μήνα
-# -------------------------------------------------------------
-monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
-
-# Κατανομή κρατήσεων ανά ημέρα/μήνα
-for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment].iterrows():
-    arrival = pd.to_datetime(row["Arrival"])
-    departure = pd.to_datetime(row["Departure"])
-    days_total = (departure - arrival).days
-    if days_total == 0:
-        continue
-    price_per_day = row["Total Price"] / days_total
-    owner_profit_per_day = row["Owner Profit"] / days_total
-
-    for i in range(days_total):
-        day = arrival + pd.Timedelta(days=i)
-        month = day.month
-        if month > today.month:
-            continue
-        monthly_metrics[month]["Total Price"] += price_per_day
-        monthly_metrics[month]["Owner Profit"] += owner_profit_per_day
-
-# Προσθήκη εξόδων ανά μήνα
-for month in range(1, today.month+1):
-    df_exp_month = expenses_df[
-        (expenses_df["Month"]==month) & 
-        (expenses_df["Accommodation"]==selected_apartment)
-    ]
-    expenses_total = df_exp_month["Amount"].apply(parse_amount).sum()
-    monthly_metrics[month]["Total Expenses"] = expenses_total
-
-# Δημιουργία DataFrame για εμφάνιση
-monthly_table = pd.DataFrame([
-    {
-        "Μήνας": months_el[m],
-        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
-        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
-    }
-    for m,v in sorted(monthly_metrics.items())
-])
-
-st.subheader(f"📊 Metrics ανά μήνα ({selected_apartment})")
-st.table(monthly_table)
-
-# -------------------------------------------------------------
-# Εμφάνιση όλων των κρατήσεων
-# -------------------------------------------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
-filtered_df = reservations_df[reservations_df["Apartment"]==selected_apartment].copy()
-filtered_df = filtered_df.sort_values(["Arrival"])
-st.dataframe(filtered_df, use_container_width=True, hide_index=True)
-
-# -------------------------------------------------------------
-# Καταχώρηση Εξόδων
-# -------------------------------------------------------------
-st.subheader("💰 Καταχώρηση Εξόδων")
-with st.form("expenses_form", clear_on_submit=True):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        exp_date = st.date_input("Ημερομηνία", value=date.today())
-    with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-    with col3:
-        exp_category = st.selectbox("Κατηγορία", ["Cleaning","Linen","Maintenance","Utilities","Supplies"])
-    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
-    exp_description = st.text_input("Περιγραφή (προαιρετική)")
-    submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
-
-    if submitted:
-        new_row = pd.DataFrame([{
-            "Date": exp_date.strftime("%Y-%m-%d"),
-            "Month": exp_date.month,
-            "Accommodation": exp_accommodation,
-            "Category": exp_category,
-            "Amount": exp_amount,
-            "Description": exp_description
-        }])
-        expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
-        expenses_df.to_excel(EXPENSES_FILE, index=False)
-        st.success("Το έξοδο καταχωρήθηκε και αποθηκεύτηκε!")
-
-# -------------------------------------------------------------
-# Εμφάνιση εξόδων
-# -------------------------------------------------------------
-st.subheader("💸 Καταχωρημένα Έξοδα")
-filtered_expenses = expenses_df[expenses_df["Accommodation"]==selected_apartment]
-if filtered_expenses.empty:
-    st.info("Δεν υπάρχουν έξοδα.")
-else:
-    st.dataframe(filtered_expenses.sort_values("Date"), use_container_width=True, hide_index=True)
+    st.info("Δεν υπάρχουν κρατήσεις για φόρτωση.")
