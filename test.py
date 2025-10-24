@@ -114,7 +114,7 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Ανάκτηση νέων κρατήσεων μετά την τελευταία στο Excel
+# Φόρτωση ΝΕΩΝ κρατήσεων από Smoobu (μόνο μετά την τελευταία στο Excel)
 # -------------------------------------------------------------
 all_rows = []
 
@@ -155,7 +155,6 @@ for apt_name, id_list in APARTMENTS.items():
                 departure_str = b.get("departure")
                 if not arrival_str or not departure_str:
                     continue
-
                 try:
                     arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
                     departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
@@ -228,10 +227,11 @@ months_el = {
 }
 
 # -------------------------------------------------------------
-# Υπολογισμός metrics ανά μήνα
+# Υπολογισμός αναλογικών metrics ανά μήνα
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
+# Κατανομή κρατήσεων ανά ημέρα/μήνα
 for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment].iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
@@ -249,6 +249,7 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         monthly_metrics[month]["Total Price"] += price_per_day
         monthly_metrics[month]["Owner Profit"] += owner_profit_per_day
 
+# Προσθήκη εξόδων ανά μήνα
 for month in range(1, today.month+1):
     df_exp_month = expenses_df[
         (expenses_df["Month"]==month) & 
@@ -257,6 +258,7 @@ for month in range(1, today.month+1):
     expenses_total = df_exp_month["Amount"].apply(parse_amount).sum()
     monthly_metrics[month]["Total Expenses"] = expenses_total
 
+# Δημιουργία DataFrame για εμφάνιση
 monthly_table = pd.DataFrame([
     {
         "Μήνας": months_el[m],
