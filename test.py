@@ -77,7 +77,7 @@ else:
 to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
-# Συναρτήσεις
+# Συναρτήσεις υπολογισμού
 # -------------------------------------------------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     if not price or not nights:
@@ -110,25 +110,41 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Συνάρτηση για push στο GitHub μέσω API
+# Συνάρτηση upload με debug
 # -------------------------------------------------------------
 def upload_file_to_github(file_path, repo, branch="main", commit_message="Auto update file"):
     github_token = os.getenv("GITHUB_TOKEN")
     if not github_token:
-        st.warning("⚠️ Δεν βρέθηκε GitHub token στα secrets.")
+        st.error("⚠️ Δεν βρέθηκε GitHub token στα secrets.")
         return
 
-    with open(file_path, "rb") as f:
-        content = base64.b64encode(f.read()).decode()
-
     filename = os.path.basename(file_path)
+
+    # Διάβασμα αρχείου
+    try:
+        with open(file_path, "rb") as f:
+            content = base64.b64encode(f.read()).decode()
+    except Exception as e:
+        st.error(f"❌ Σφάλμα στο διάβασμα του αρχείου: {e}")
+        return
+
     url = f"https://api.github.com/repos/{repo}/contents/{filename}"
 
     # Έλεγχος αν υπάρχει ήδη το αρχείο
-    response = requests.get(url, headers={"Authorization": f"token {github_token}"})
-    sha = None
-    if response.status_code == 200:
-        sha = response.json()["sha"]
+    try:
+        response = requests.get(url, headers={"Authorization": f"token {github_token}"})
+        if response.status_code == 200:
+            sha = response.json()["sha"]
+            st.info(f"📝 Το αρχείο υπάρχει ήδη στο repo, θα γίνει update. SHA: {sha}")
+        elif response.status_code == 404:
+            sha = None
+            st.info("🆕 Το αρχείο δεν υπάρχει ακόμα, θα δημιουργηθεί νέο.")
+        else:
+            st.warning(f"⚠️ GET request απέτυχε: {response.status_code} {response.text}")
+            return
+    except Exception as e:
+        st.error(f"❌ Σφάλμα κατά το GET request: {e}")
+        return
 
     data = {
         "message": f"{commit_message} on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
@@ -138,11 +154,15 @@ def upload_file_to_github(file_path, repo, branch="main", commit_message="Auto u
     if sha:
         data["sha"] = sha
 
-    r = requests.put(url, headers={"Authorization": f"token {github_token}"}, json=data)
-    if r.status_code in [200, 201]:
-        st.success(f"✅ {filename} ανέβηκε στο GitHub!")
-    else:
-        st.error(f"❌ Σφάλμα κατά το ανέβασμα: {r.status_code} {r.text}")
+    # Upload/Update
+    try:
+        r = requests.put(url, headers={"Authorization": f"token {github_token}"}, json=data)
+        if r.status_code in [200, 201]:
+            st.success(f"✅ Το αρχείο '{filename}' ανέβηκε στο GitHub! (Status: {r.status_code})")
+        else:
+            st.error(f"❌ Αποτυχία ανέβασματος: Status {r.status_code}, Response: {r.text}")
+    except Exception as e:
+        st.error(f"❌ Σφάλμα κατά το PUT request: {e}")
 
 # -------------------------------------------------------------
 # Φόρτωση Excel ή κενά DataFrames
@@ -162,7 +182,7 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Ανάκτηση νέων κρατήσεων από Smoobu (τρέχον μήνα ή full)
+# Ανάκτηση νέων κρατήσεων από Smoobu
 # -------------------------------------------------------------
 all_rows = []
 for apt_name, id_list in APARTMENTS.items():
@@ -206,7 +226,8 @@ for apt_name, id_list in APARTMENTS.items():
                 guests = adults + children
                 days = max((departure_dt - arrival_dt).days, 0)
 
-                if "expedia" in platform.lower():
+                platform_lower = platform.lower().strip()
+                if "expedia" in platform_lower:
                     price = price / 0.82
 
                 price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, apt_name)
@@ -237,13 +258,15 @@ for apt_name, id_list in APARTMENTS.items():
             else:
                 break
 
+# Προσθήκη νέων κρατήσεων στο Excel
 if all_rows:
     reservations_df = pd.concat([reservations_df, pd.DataFrame(all_rows)], ignore_index=True)
     reservations_df.drop_duplicates(subset=["ID"], inplace=True)
     reservations_df.to_excel(RESERVATIONS_FILE, index=False)
 
     # Upload στο GitHub
-    upload_file_to_github(RESERVATIONS_FILE, repo="tasoszaf/AIRSTAY)  # βάλε το δικό σου repo
+    upload_file_to_github(RESERVATIONS_FILE, repo="tasoszaf/AIRSTAY")  # βάλε το δικό σου repo
+
 # -------------------------------------------------------------
 # Sidebar επιλογής καταλύματος
 # -------------------------------------------------------------
@@ -353,3 +376,4 @@ if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα.")
 else:
     st.dataframe(filtered_expenses.sort_values("Date"), use_container_width=True, hide_index=True)
+
