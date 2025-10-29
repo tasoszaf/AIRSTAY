@@ -112,11 +112,11 @@ def parse_amount(v):
 # -------------------------------------------------------------
 # Συνάρτηση upload με debug
 # -------------------------------------------------------------
+
 def upload_file_to_github(file_path, repo, branch="main", commit_message="Auto update file"):
     github_token = os.getenv("GITHUB_TOKEN")
     if not github_token:
-        st.error("⚠️ Δεν βρέθηκε GitHub token στα secrets.")
-        return
+        return  # Δεν υπάρχει token, απλά σταματάει
 
     filename = os.path.basename(file_path)
 
@@ -124,9 +124,8 @@ def upload_file_to_github(file_path, repo, branch="main", commit_message="Auto u
     try:
         with open(file_path, "rb") as f:
             content = base64.b64encode(f.read()).decode()
-    except Exception as e:
-        st.error(f"❌ Σφάλμα στο διάβασμα του αρχείου: {e}")
-        return
+    except:
+        return  # Αν αποτύχει το διάβασμα, σταματάει
 
     url = f"https://api.github.com/repos/{repo}/contents/{filename}"
 
@@ -135,15 +134,11 @@ def upload_file_to_github(file_path, repo, branch="main", commit_message="Auto u
         response = requests.get(url, headers={"Authorization": f"token {github_token}"})
         if response.status_code == 200:
             sha = response.json()["sha"]
-            # st.info(f"📝 Το αρχείο υπάρχει ήδη στο repo, θα γίνει update. SHA: {sha}")
         elif response.status_code == 404:
             sha = None
-            # st.info("🆕 Το αρχείο δεν υπάρχει ακόμα, θα δημιουργηθεί νέο.")
         else:
-            # st.warning(f"⚠️ GET request απέτυχε: {response.status_code} {response.text}")
             return
-    except Exception as e:
-        # st.error(f"❌ Σφάλμα κατά το GET request: {e}")
+    except:
         return
 
     data = {
@@ -157,12 +152,10 @@ def upload_file_to_github(file_path, repo, branch="main", commit_message="Auto u
     # Upload/Update
     try:
         r = requests.put(url, headers={"Authorization": f"token {github_token}"}, json=data)
-        if r.status_code in [200, 201]:
-            # st.success(f"✅ Το αρχείο '{filename}' ανέβηκε στο GitHub! (Status: {r.status_code})")
-        else:
-            # st.error(f"❌ Αποτυχία ανέβασματος: Status {r.status_code}, Response: {r.text}")
-    except Exception as e:
-        st.error(f"❌ Σφάλμα κατά το PUT request: {e}")
+        # Δεν εμφανίζουμε κανένα μήνυμα
+        return
+    except:
+        return
 
 # -------------------------------------------------------------
 # Φόρτωση Excel ή κενά DataFrames
