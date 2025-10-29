@@ -4,7 +4,7 @@ import requests
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
-import subprocess
+import base64
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -17,14 +17,14 @@ headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# Paths για αρχεία Excel στο ίδιο folder με το script
+# Paths για αρχεία Excel
 # -------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
-# Flag για full update ιστορικών κρατήσεων
-UPDATE_FULL_HISTORY = True # Αν True, φέρνει όλα από 1/1 έως προηγούμενο μήνα
+# Flag για πλήρη ιστορικό
+UPDATE_FULL_HISTORY = False  # True φέρνει από 1/1 έως προηγούμενο μήνα
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
@@ -73,7 +73,6 @@ today = date.today()
 if UPDATE_FULL_HISTORY:
     from_date = "2025-01-01"
 else:
-    # Μόνο ο τρέχων μήνας
     from_date = date(today.year, today.month, 1).strftime("%Y-%m-%d")
 to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -111,6 +110,41 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
+# Συνάρτηση για push στο GitHub μέσω API
+# -------------------------------------------------------------
+def upload_file_to_github(file_path, repo, branch="main", commit_message="Auto update file"):
+    github_token = os.getenv("GITHUB_TOKEN")
+    if not github_token:
+        st.warning("⚠️ Δεν βρέθηκε GitHub token στα secrets.")
+        return
+
+    with open(file_path, "rb") as f:
+        content = base64.b64encode(f.read()).decode()
+
+    filename = os.path.basename(file_path)
+    url = f"https://api.github.com/repos/{repo}/contents/{filename}"
+
+    # Έλεγχος αν υπάρχει ήδη το αρχείο
+    response = requests.get(url, headers={"Authorization": f"token {github_token}"})
+    sha = None
+    if response.status_code == 200:
+        sha = response.json()["sha"]
+
+    data = {
+        "message": f"{commit_message} on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "content": content,
+        "branch": branch
+    }
+    if sha:
+        data["sha"] = sha
+
+    r = requests.put(url, headers={"Authorization": f"token {github_token}"}, json=data)
+    if r.status_code in [200, 201]:
+        st.success(f"✅ {filename} ανέβηκε στο GitHub!")
+    else:
+        st.error(f"❌ Σφάλμα κατά το ανέβασμα: {r.status_code} {r.text}")
+
+# -------------------------------------------------------------
 # Φόρτωση Excel ή κενά DataFrames
 # -------------------------------------------------------------
 try:
@@ -128,10 +162,9 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Ανάκτηση νέων κρατήσεων από Smoobu (μόνο τρέχον μήνα ή full)
+# Ανάκτηση νέων κρατήσεων από Smoobu (τρέχον μήνα ή full)
 # -------------------------------------------------------------
 all_rows = []
-
 for apt_name, id_list in APARTMENTS.items():
     for apt_id in id_list:
         params = {
@@ -173,8 +206,7 @@ for apt_name, id_list in APARTMENTS.items():
                 guests = adults + children
                 days = max((departure_dt - arrival_dt).days, 0)
 
-                platform_lower = platform.lower().strip()
-                if "expedia" in platform_lower:
+                if "expedia" in platform.lower():
                     price = price / 0.82
 
                 price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, apt_name)
@@ -210,41 +242,8 @@ if all_rows:
     reservations_df.drop_duplicates(subset=["ID"], inplace=True)
     reservations_df.to_excel(RESERVATIONS_FILE, index=False)
 
-    # -------------------------------
-    # Αυτόματο push στο GitHub
-    # -------------------------------
-    import streamlit as st
-    from datetime import datetime
-
-    def push_to_github(file_path, commit_message="Auto update reservations"):
-        github_token = os.getenv("GITHUB_TOKEN")  # παίρνει το secret
-        if not github_token:
-            st.warning("⚠️ Δεν βρέθηκε GitHub token στο Streamlit secrets.")
-            return
-
-        try:
-            # Git config
-            subprocess.run(["git", "config", "--global", "user.email", "bot@airstay.local"], check=True)
-            subprocess.run(["git", "config", "--global", "user.name", "Airstay Bot"], check=True)
-
-            # add + commit
-            subprocess.run(["git", "add", file_path], check=True)
-            commit_message = f"{commit_message} on {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            subprocess.run(["git", "commit", "-m", commit_message], check=True)
-
-            # push
-            remote_repo = "tasoszaf/AIRSTAY"  # Βάλε εδώ το δικό σου
-            subprocess.run(
-                ["git", "push", f"https://{github_token}@github.com/{remote_repo}.git"],
-                check=True
-            )
-
-            st.success("✅ Το αρχείο ανέβηκε στο GitHub!")
-        except subprocess.CalledProcessError as e:
-            st.error(f"❌ Σφάλμα Git push: {e}")
-
-    push_to_github(RESERVATIONS_FILE)
-
+    # Upload στο GitHub
+    upload_file_to_github(RESERVATIONS_FILE, repo="tasoszaf/AIRSTAY)  # βάλε το δικό σου repo
 # -------------------------------------------------------------
 # Sidebar επιλογής καταλύματος
 # -------------------------------------------------------------
@@ -264,6 +263,7 @@ months_el = {
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
+# Κατανομή κρατήσεων ανά ημέρα/μήνα
 for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment].iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
@@ -272,15 +272,16 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         continue
     price_per_day = row["Total Price"] / days_total
     owner_profit_per_day = row["Owner Profit"] / days_total
+
     for i in range(days_total):
         day = arrival + pd.Timedelta(days=i)
         month = day.month
         if month > today.month:
-            continue
+            continue  # αγνοούμε μελλοντικούς μήνες
         monthly_metrics[month]["Total Price"] += price_per_day
         monthly_metrics[month]["Owner Profit"] += owner_profit_per_day
 
-# Προσθήκη εξόδων
+# Προσθήκη εξόδων ανά μήνα
 for month in range(1, today.month+1):
     df_exp_month = expenses_df[
         (expenses_df["Month"]==month) & 
@@ -338,10 +339,10 @@ with st.form("expenses_form", clear_on_submit=True):
         }])
         expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
         expenses_df.to_excel(EXPENSES_FILE, index=False)
-        st.success("Το έξοδο καταχωρήθηκε!")
 
-        # Προαιρετικά push των εξόδων
-        push_to_github(EXPENSES_FILE, "Auto update expenses file")
+        # Upload στο GitHub
+        upload_file_to_github(EXPENSES_FILE, repo="username/repo-name")  # βάλε το δικό σου repo
+        st.success("Το έξοδο καταχωρήθηκε!")
 
 # -------------------------------------------------------------
 # Εμφάνιση εξόδων
