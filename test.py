@@ -24,7 +24,7 @@ RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
 # Flag για πλήρη ιστορικό
-UPDATE_FULL_HISTORY = False  # True φέρνει από 1/1 έως προηγούμενο μήνα
+UPDATE_FULL_HISTORY = True  # True φέρνει από 1/1 έως προηγούμενο μήνα
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
@@ -364,7 +364,7 @@ with st.form("expenses_form", clear_on_submit=True):
         expenses_df.to_excel(EXPENSES_FILE, index=False)
 
         # Upload στο GitHub
-        upload_file_to_github(EXPENSES_FILE, repo="username/repo-name")  # βάλε το δικό σου repo
+        upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")  # βάλε το δικό σου repo
         st.success("Το έξοδο καταχωρήθηκε!")
 
 # -------------------------------------------------------------
