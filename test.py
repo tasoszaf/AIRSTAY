@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from datetime import datetime, date, timedelta
 from collections import defaultdict
+import os
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -111,8 +112,9 @@ def parse_amount(v):
 # -------------------------------------------------------------
 # Excel αρχεία
 # -------------------------------------------------------------
-RESERVATIONS_FILE = "reservations.xlsx"
-EXPENSES_FILE = "expenses.xlsx"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
+EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
 try:
     reservations_df = pd.read_excel(RESERVATIONS_FILE)
