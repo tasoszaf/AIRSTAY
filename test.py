@@ -318,7 +318,7 @@ monthly_table = pd.DataFrame([
 ])
 
 st.subheader(f"📊 Metrics ανά μήνα ({selected_apartment})")
-st.table(monthly_table)
+st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
 # Εμφάνιση όλων των κρατήσεων
