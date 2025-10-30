@@ -326,7 +326,7 @@ st.table(monthly_table)
 st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
 filtered_df = reservations_df[reservations_df["Apartment"]==selected_apartment].copy()
 filtered_df = filtered_df.sort_values(["Arrival"])
-st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+st.dataframe(filtered_df, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
 # Καταχώρηση Εξόδων
