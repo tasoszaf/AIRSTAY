@@ -328,7 +328,12 @@ filtered_df = reservations_df[reservations_df["Apartment"]==selected_apartment].
 filtered_df = filtered_df.sort_values(["Arrival"])
 st.dataframe(filtered_df, width="stretch", hide_index=True)
 
+
 import uuid
+
+# Δημιουργούμε session_state για τα έξοδα
+if "expenses_df" not in st.session_state:
+    st.session_state.expenses_df = expenses_df.copy()
 
 # -------------------------------
 # Καταχώρηση Εξόδων
@@ -348,7 +353,7 @@ with st.form("expenses_form", clear_on_submit=True):
 
     if submitted:
         new_row = pd.DataFrame([{
-            "ID": str(uuid.uuid4()),  # Μοναδικό ID
+            "ID": str(uuid.uuid4()),
             "Date": exp_date.strftime("%Y-%m-%d"),
             "Month": exp_date.month,
             "Accommodation": exp_accommodation.upper(),
@@ -356,8 +361,8 @@ with st.form("expenses_form", clear_on_submit=True):
             "Amount": exp_amount,
             "Description": exp_description
         }])
-        expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
-        expenses_df.to_excel(EXPENSES_FILE, index=False)
+        st.session_state.expenses_df = pd.concat([st.session_state.expenses_df, new_row], ignore_index=True)
+        st.session_state.expenses_df.to_excel(EXPENSES_FILE, index=False)
         upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")
         st.success("Το έξοδο καταχωρήθηκε!")
 
@@ -366,9 +371,8 @@ with st.form("expenses_form", clear_on_submit=True):
 # -------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
-# Φιλτράρισμα εξόδων για το επιλεγμένο κατάλυμα
-filtered_expenses = expenses_df[
-    expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment.upper()
+filtered_expenses = st.session_state.expenses_df[
+    st.session_state.expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment.upper()
 ].copy().sort_values("Date").reset_index(drop=True)
 
 if filtered_expenses.empty:
@@ -378,10 +382,14 @@ else:
         with st.expander(f"{row['Date']} | {row['Category']} | {row['Amount']} €"):
             st.write(f"**Περιγραφή:** {row.get('Description','-')}")
             
-            # Κουμπί διαγραφής με μοναδικό key
+            # Κουμπί διαγραφής
             if st.button("🗑️ Διαγραφή", key=f"{i}_{row['ID']}"):
-                expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
-                expenses_df.to_excel(EXPENSES_FILE, index=False)
+                st.session_state.expenses_df = st.session_state.expenses_df[
+                    st.session_state.expenses_df["ID"] != row["ID"]
+                ].reset_index(drop=True)
+                st.session_state.expenses_df.to_excel(EXPENSES_FILE, index=False)
                 upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")
                 st.success("Το έξοδο διαγράφηκε!")
                 st.experimental_rerun()
+
+
