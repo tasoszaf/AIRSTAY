@@ -361,7 +361,7 @@ with st.form("expenses_form", clear_on_submit=True):
         st.success("Το έξοδο καταχωρήθηκε!")
 
 # -------------------------------------------------------------
-# Εμφάνιση εξόδων
+# Εμφάνιση εξόδων με κουμπί διαγραφής
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
@@ -369,28 +369,28 @@ filtered_expenses = expenses_df[expenses_df["Accommodation"] == selected_apartme
 filtered_expenses = filtered_expenses.sort_values("Date").reset_index(drop=True)
 
 if filtered_expenses.empty:
-    st.info("Δεν υπάρχουν έξοδα.")
+    st.info("Δεν υπάρχουν έξοδα για αυτό το κατάλυμα.")
 else:
-    st.write("Παρακάτω μπορείς να διαγράψεις κάποιο έξοδο αν χρειάζεται:")
+    st.write("Παρακάτω φαίνονται τα έξοδα. Μπορείς να διαγράψεις κάποιο από αυτά:")
 
-# Δημιουργούμε πίνακα με κουμπιά διαγραφής
-    for i, row in filtered_expenses.iterrows():
-        cols = st.columns([2, 2, 1, 2, 2, 2, 1])
-        cols[0].write(row["Date"])
-        cols[1].write(row["Category"])
-        cols[2].write(f"{row['Amount']} €")
-        cols[3].write(row.get("Description", ""))
-        cols[4].write(row["Accommodation"])
-        delete_btn = cols[6].button("🗑️ Διαγραφή", key=f"del_{i}")
+    # Δημιουργία γραμμών με κουμπί διαγραφής
+    for idx, row in filtered_expenses.iterrows():
+        with st.container(border=True):
+            c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 4, 1])
 
-        if delete_btn:
-            # Διαγραφή της συγκεκριμένης γραμμής
-            expenses_df = expenses_df.drop(filtered_expenses.index[i]).reset_index(drop=True)
-            expenses_df.to_excel(EXPENSES_FILE, index=False)
+            c1.write(row["Date"])
+            c2.write(row["Category"])
+            c3.write(f"{row['Amount']} €")
+            c4.write(row.get("Description", "-"))
 
-            # Upload στο GitHub (αν υπάρχει token)
-            upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")
+            # Κουμπί διαγραφής με μοναδικό key
+            if c5.button("🗑️ Διαγραφή", key=f"delete_{idx}_{row['Date']}"):
+                # Διαγραφή από το DataFrame
+                expenses_df = expenses_df.drop(filtered_expenses.index[idx]).reset_index(drop=True)
+                expenses_df.to_excel(EXPENSES_FILE, index=False)
 
-            st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε επιτυχώς!")
-            st.experimental_rerun()
+                # Ανέβασμα στο GitHub
+                upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")
 
+                st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε!")
+                st.experimental_rerun()
