@@ -387,7 +387,7 @@ with st.form("expenses_form", clear_on_submit=True):
         st.success("✅ Το έξοδο καταχωρήθηκε επιτυχώς!")
 
 # -------------------------------------------------------------
-# Εμφάνιση & Διαγραφή εξόδων
+# Εμφάνιση & Διαγραφή εξόδων (λειτουργικό layout)
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
@@ -400,20 +400,20 @@ if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα για αυτό το κατάλυμα.")
 else:
     st.markdown("### 📋 Λίστα Εξόδων")
-    # Δημιουργία πίνακα με κουμπί διαγραφής ανά γραμμή
     for idx, row in filtered_expenses.iterrows():
-        col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 3, 1])
-        col1.write(row["Date"])
-        col2.write(row["Category"])
-        col3.write(f"{row['Amount']} €")
-        col4.write(row.get("Description", "-"))
-        if col5.button("🗑️", key=f"delete_{row['ID']}"):
-            expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
-            expenses_df.to_excel(EXPENSES_FILE, index=False)
-            st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε!")
-            st.experimental_rerun()
+        with st.container():
+            st.write(f"**Ημερομηνία:** {row['Date']}")
+            st.write(f"**Κατηγορία:** {row['Category']}")
+            st.write(f"**Ποσό:** {row['Amount']} €")
+            st.write(f"**Περιγραφή:** {row.get('Description', '-')}")
+            # --- Κουμπί διαγραφής ---
+            if st.button("🗑️ Διαγραφή", key=f"del_{row['ID']}"):
+                expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
+                expenses_df.to_excel(EXPENSES_FILE, index=False)
+                st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε!")
+                st.experimental_rerun()
+            st.divider()
 
-    # Εμφάνιση συνολικού ποσού εξόδων
     total_expenses = filtered_expenses["Amount"].sum()
     st.markdown(f"### 💵 **Σύνολο Εξόδων:** {total_expenses:.2f} €")
 
