@@ -387,11 +387,13 @@ with st.form("expenses_form", clear_on_submit=True):
         st.success("✅ Το έξοδο καταχωρήθηκε επιτυχώς!")
 
 # -------------------------------------------------------------
-# Εμφάνιση & Διαγραφή εξόδων (λειτουργικό layout)
+# Εμφάνιση & Διαγραφή εξόδων (σίγουρη εκδοχή)
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
 selected_apartment_upper = selected_apartment.upper()
+
+# Φίλτρο για το επιλεγμένο κατάλυμα
 filtered_expenses = expenses_df[
     expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment_upper
 ].copy().sort_values("Date").reset_index(drop=True)
@@ -400,21 +402,27 @@ if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα για αυτό το κατάλυμα.")
 else:
     st.markdown("### 📋 Λίστα Εξόδων")
-    for idx, row in filtered_expenses.iterrows():
+
+    # Εμφάνιση κάθε εξόδου σε ξεχωριστό container
+    for i, row in filtered_expenses.iterrows():
         with st.container():
-            st.write(f"**Ημερομηνία:** {row['Date']}")
-            st.write(f"**Κατηγορία:** {row['Category']}")
-            st.write(f"**Ποσό:** {row['Amount']} €")
-            st.write(f"**Περιγραφή:** {row.get('Description', '-')}")
-            # --- Κουμπί διαγραφής ---
-            if st.button("🗑️ Διαγραφή", key=f"del_{row['ID']}"):
+            st.markdown(f"**Ημερομηνία:** {row['Date']}  |  **Κατηγορία:** {row['Category']}")
+            st.markdown(f"**Ποσό:** {row['Amount']} €")
+            st.markdown(f"**Περιγραφή:** {row.get('Description','-')}")
+
+            # --- Κουμπί διαγραφής (με μοναδικό key) ---
+            delete_key = f"delete_btn_{i}_{row['ID']}"
+            if st.button("🗑️ Διαγραφή", key=delete_key):
                 expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
                 expenses_df.to_excel(EXPENSES_FILE, index=False)
                 st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε!")
                 st.experimental_rerun()
-            st.divider()
 
+            st.divider()  # γραμμή διαχωρισμού μεταξύ εξόδων
+
+    # Υπολογισμός συνολικού ποσού
     total_expenses = filtered_expenses["Amount"].sum()
     st.markdown(f"### 💵 **Σύνολο Εξόδων:** {total_expenses:.2f} €")
+
 
 
