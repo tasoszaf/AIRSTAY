@@ -332,20 +332,20 @@ st.dataframe(filtered_df, width="stretch", hide_index=True)
 import uuid
 import pandas as pd
 from datetime import date
+import streamlit as st
 
 # -------------------------------
-# Αρχικοποίηση session_state
+# Αρχικοποίηση ή φόρτωση Excel
 # -------------------------------
-if "expenses_df" not in st.session_state:
-    try:
-        st.session_state.expenses_df = pd.read_excel(EXPENSES_FILE)
-    except FileNotFoundError:
-        st.session_state.expenses_df = pd.DataFrame(columns=[
-            "ID","Date","Month","Accommodation","Category","Amount","Description"
-        ])
+try:
+    expenses_df = pd.read_excel("expenses.xlsx")
+except FileNotFoundError:
+    expenses_df = pd.DataFrame(columns=[
+        "ID","Date","Month","Accommodation","Category","Amount","Description"
+    ])
 
 # -------------------------------
-# Καταχώρηση Εξόδων
+# Καταχώρηση νέου εξόδου
 # -------------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -370,26 +370,31 @@ with st.form("expenses_form", clear_on_submit=True):
             "Amount": exp_amount,
             "Description": exp_description
         }])
-        st.session_state.expenses_df = pd.concat([st.session_state.expenses_df, new_row], ignore_index=True)
-        st.session_state.expenses_df.to_excel(EXPENSES_FILE, index=False)
-        upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")
+        expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
+        expenses_df.to_excel("expenses.xlsx", index=False)
         st.success("Το έξοδο καταχωρήθηκε!")
 
 # -------------------------------
-# Εμφάνιση & Διαγραφή Εξόδων
+# Εμφάνιση & Διαγραφή εξόδων
 # -------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
+selected_apartment_upper = selected_apartment.upper()
 filtered_expenses = expenses_df[
-    expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment.upper()
+    expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment_upper
 ].copy().sort_values("Date").reset_index(drop=True)
 
 if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα για αυτό το κατάλυμα.")
 else:
-    for _, row in filtered_expenses.iterrows():
-        st.markdown("---")
-        st.write(f"**Ημερομηνία:** {row['Date']}  |  **Κατηγορία:** {row['Category']}  |  **Ποσό:** {row['Amount']} €")
-        st.write(f"**Περιγραφή:** {row.get('Description','-')}")
+    for i, row in filtered_expenses.iterrows():
+        with st.expander(f"{row['Date']} | {row['Category']} | {row['Amount']} €"):
+            st.write(f"**Περιγραφή:** {row.get('Description','-')}")
+            # Κουμπί διαγραφής
+            if st.button("🗑️ Διαγραφή", key=f"{i}_{row['ID']}"):
+                expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
+                expenses_df.to_excel("expenses.xlsx", index=False)
+                st.success("Το έξοδο διαγράφηκε!")
+                st.experimental_rerun()
 
 
