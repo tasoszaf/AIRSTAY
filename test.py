@@ -329,6 +329,9 @@ filtered_df = filtered_df.sort_values(["Arrival"])
 st.dataframe(filtered_df, width="stretch", hide_index=True)
 
 
+# -------------------------------------------------------------
+# 💰 Διαχείριση Εξόδων
+# -------------------------------------------------------------
 import uuid
 import pandas as pd
 from datetime import date
@@ -337,17 +340,24 @@ import streamlit as st
 # -------------------------------
 # Αρχικοποίηση ή φόρτωση Excel
 # -------------------------------
+EXPENSES_FILE = "expenses.xlsx"
+
 try:
-    expenses_df = pd.read_excel("expenses.xlsx")
+    expenses_df = pd.read_excel(EXPENSES_FILE)
 except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=[
         "ID","Date","Month","Accommodation","Category","Amount","Description"
     ])
 
-# -------------------------------
+# Εξασφάλιση ύπαρξης μοναδικού ID για κάθε γραμμή
+if "ID" not in expenses_df.columns:
+    expenses_df["ID"] = [str(uuid.uuid4()) for _ in range(len(expenses_df))]
+
+# -------------------------------------------------------------
 # Καταχώρηση νέου εξόδου
-# -------------------------------
+# -------------------------------------------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
+
 with st.form("expenses_form", clear_on_submit=True):
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -355,7 +365,9 @@ with st.form("expenses_form", clear_on_submit=True):
     with col2:
         exp_accommodation = st.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
     with col3:
-        exp_category = st.selectbox("Κατηγορία", ["Cleaning","Linen","Maintenance","Utilities","Supplies"])
+        exp_category = st.selectbox("Κατηγορία", [
+            "Cleaning", "Linen", "Maintenance", "Utilities", "Supplies", "Other"
+        ])
     exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
     exp_description = st.text_input("Περιγραφή (προαιρετική)")
     submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
@@ -371,12 +383,12 @@ with st.form("expenses_form", clear_on_submit=True):
             "Description": exp_description
         }])
         expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
-        expenses_df.to_excel("expenses.xlsx", index=False)
-        st.success("Το έξοδο καταχωρήθηκε!")
+        expenses_df.to_excel(EXPENSES_FILE, index=False)
+        st.success("✅ Το έξοδο καταχωρήθηκε επιτυχώς!")
 
-# -------------------------------
+# -------------------------------------------------------------
 # Εμφάνιση & Διαγραφή εξόδων
-# -------------------------------
+# -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
 selected_apartment_upper = selected_apartment.upper()
@@ -387,14 +399,22 @@ filtered_expenses = expenses_df[
 if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα για αυτό το κατάλυμα.")
 else:
-    for i, row in filtered_expenses.iterrows():
-        with st.expander(f"{row['Date']} | {row['Category']} | {row['Amount']} €"):
-            st.write(f"**Περιγραφή:** {row.get('Description','-')}")
-            # Κουμπί διαγραφής
-            if st.button("🗑️ Διαγραφή", key=f"{i}_{row['ID']}"):
-                expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
-                expenses_df.to_excel("expenses.xlsx", index=False)
-                st.success("Το έξοδο διαγράφηκε!")
-                st.experimental_rerun()
+    st.markdown("### 📋 Λίστα Εξόδων")
+    # Δημιουργία πίνακα με κουμπί διαγραφής ανά γραμμή
+    for idx, row in filtered_expenses.iterrows():
+        col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 3, 1])
+        col1.write(row["Date"])
+        col2.write(row["Category"])
+        col3.write(f"{row['Amount']} €")
+        col4.write(row.get("Description", "-"))
+        if col5.button("🗑️", key=f"delete_{row['ID']}"):
+            expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
+            expenses_df.to_excel(EXPENSES_FILE, index=False)
+            st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε!")
+            st.experimental_rerun()
+
+    # Εμφάνιση συνολικού ποσού εξόδων
+    total_expenses = filtered_expenses["Amount"].sum()
+    st.markdown(f"### 💵 **Σύνολο Εξόδων:** {total_expenses:.2f} €")
 
 
