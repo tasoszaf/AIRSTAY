@@ -364,9 +364,33 @@ with st.form("expenses_form", clear_on_submit=True):
 # Εμφάνιση εξόδων
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
-filtered_expenses = expenses_df[expenses_df["Accommodation"]==selected_apartment]
+
+filtered_expenses = expenses_df[expenses_df["Accommodation"] == selected_apartment].copy()
+filtered_expenses = filtered_expenses.sort_values("Date").reset_index(drop=True)
+
 if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα.")
 else:
-    st.dataframe(filtered_expenses.sort_values("Date"), use_container_width=True, hide_index=True)
+    st.write("Παρακάτω μπορείς να διαγράψεις κάποιο έξοδο αν χρειάζεται:")
+
+# Δημιουργούμε πίνακα με κουμπιά διαγραφής
+    for i, row in filtered_expenses.iterrows():
+        cols = st.columns([2, 2, 1, 2, 2, 2, 1])
+        cols[0].write(row["Date"])
+        cols[1].write(row["Category"])
+        cols[2].write(f"{row['Amount']} €")
+        cols[3].write(row.get("Description", ""))
+        cols[4].write(row["Accommodation"])
+        delete_btn = cols[6].button("🗑️ Διαγραφή", key=f"del_{i}")
+
+        if delete_btn:
+            # Διαγραφή της συγκεκριμένης γραμμής
+            expenses_df = expenses_df.drop(filtered_expenses.index[i]).reset_index(drop=True)
+            expenses_df.to_excel(EXPENSES_FILE, index=False)
+
+            # Upload στο GitHub (αν υπάρχει token)
+            upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")
+
+            st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε επιτυχώς!")
+            st.experimental_rerun()
 
