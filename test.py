@@ -330,10 +330,19 @@ st.dataframe(filtered_df, width="stretch", hide_index=True)
 
 
 import uuid
+import pandas as pd
+from datetime import date
 
-# Δημιουργούμε session_state για τα έξοδα
+# -------------------------------
+# Αρχικοποίηση session_state
+# -------------------------------
 if "expenses_df" not in st.session_state:
-    st.session_state.expenses_df = expenses_df.copy()
+    try:
+        st.session_state.expenses_df = pd.read_excel(EXPENSES_FILE)
+    except FileNotFoundError:
+        st.session_state.expenses_df = pd.DataFrame(columns=[
+            "ID","Date","Month","Accommodation","Category","Amount","Description"
+        ])
 
 # -------------------------------
 # Καταχώρηση Εξόδων
@@ -371,8 +380,10 @@ with st.form("expenses_form", clear_on_submit=True):
 # -------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
+# Φιλτράρισμα εξόδων για το επιλεγμένο κατάλυμα
+selected_apartment_upper = selected_apartment.upper()
 filtered_expenses = st.session_state.expenses_df[
-    st.session_state.expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment.upper()
+    st.session_state.expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment_upper
 ].copy().sort_values("Date").reset_index(drop=True)
 
 if filtered_expenses.empty:
@@ -382,7 +393,7 @@ else:
         with st.expander(f"{row['Date']} | {row['Category']} | {row['Amount']} €"):
             st.write(f"**Περιγραφή:** {row.get('Description','-')}")
             
-            # Κουμπί διαγραφής
+            # Κουμπί διαγραφής με μοναδικό key
             if st.button("🗑️ Διαγραφή", key=f"{i}_{row['ID']}"):
                 st.session_state.expenses_df = st.session_state.expenses_df[
                     st.session_state.expenses_df["ID"] != row["ID"]
