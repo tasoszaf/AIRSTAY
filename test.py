@@ -360,30 +360,33 @@ with st.form("expenses_form", clear_on_submit=True):
         upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")  # βάλε το δικό σου repo
         st.success("Το έξοδο καταχωρήθηκε!")
 
+
 # -------------------------------------------------------------
-# Εμφάνιση εξόδων με κουμπί διαγραφής (μόνο μήνυμα διαγραφής)
+# Εμφάνιση εξόδων με κουμπί διαγραφής (σίγουρη λειτουργία)
 # -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 
-# Καθαρισμός συμβολοσειρών για σιγουριά
+# Καθαρισμός τιμών για να ταιριάζει σωστά το φίλτρο
 expenses_df["Accommodation"] = expenses_df["Accommodation"].astype(str).str.strip().str.upper()
 selected_apartment = selected_apartment.upper()
 
+# Φιλτράρισμα εξόδων για το συγκεκριμένο κατάλυμα
 filtered_expenses = expenses_df[expenses_df["Accommodation"] == selected_apartment].copy()
 filtered_expenses = filtered_expenses.sort_values("Date").reset_index(drop=True)
+
+# DEBUG: δες αν υπάρχουν γραμμές
+st.write("DEBUG: Πλήθος εξόδων ->", len(filtered_expenses))
 
 if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα για αυτό το κατάλυμα.")
 else:
     for idx, row in filtered_expenses.iterrows():
-        cols = st.columns([2, 2, 2, 4, 1])
-        cols[0].write(row["Date"])
-        cols[1].write(row["Category"])
-        cols[2].write(f"{row['Amount']} €")
-        cols[3].write(row.get("Description", "-"))
+        st.markdown("---")  # γραμμή διαχωρισμού για κάθε έξοδο
+        st.write(f"**Ημερομηνία:** {row['Date']}  |  **Κατηγορία:** {row['Category']}  |  **Ποσό:** {row['Amount']} €")
+        st.write(f"**Περιγραφή:** {row.get('Description','-')}")
 
-        # Εδώ είναι το κουμπί
-        if cols[4].button("🗑️ Διαγραφή", key=f"delete_{idx}_{row['Date']}"):
+        # Εδώ είναι το κουμπί διαγραφής
+        if st.button("🗑️ Διαγραφή", key=f"delete_{idx}"):
             expenses_df = expenses_df.drop(filtered_expenses.index[idx]).reset_index(drop=True)
             expenses_df.to_excel(EXPENSES_FILE, index=False)
             upload_file_to_github(EXPENSES_FILE, repo="tasoszaf/AIRSTAY")
