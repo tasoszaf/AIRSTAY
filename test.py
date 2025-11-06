@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
 import base64
+import uuid
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -24,7 +25,7 @@ RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
 # Flag για πλήρη ιστορικό
-UPDATE_FULL_HISTORY = False  # True φέρνει από 1/1 έως προηγούμενο μήνα
+UPDATE_FULL_HISTORY = False
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
@@ -71,37 +72,39 @@ APARTMENT_SETTINGS = {
 }
 
 # -------------------------------------------------------------
+# THRESH Mapping για ξεχωριστά καταλύματα
+# -------------------------------------------------------------
+THRESH_MAPPING = {
+    563628: "THRESH",
+    563631: "THRESH",
+    563637: "THRESH",
+    563640: "THRESH",
+    563643: "THRESH",
+    1200587: "THRESH A3",
+    563634: "THRESH A4"
+}
+
+# -------------------------------------------------------------
 # Ημερομηνίες
 # -------------------------------------------------------------
 today = date.today()
 yesterday = today - timedelta(days=1)
 
-# 👉 Αυτές οι ημερομηνίες χρησιμοποιούνται ΜΟΝΟ για εμφάνιση
-display_from_date = "2025-01-01"  # Από πότε θέλεις να ξεκινάει η εμφάνιση στο dashboard
+display_from_date = "2025-01-01"
 display_to_date = yesterday.strftime("%Y-%m-%d")
 
-# -------------------------------------------------------------
-# Περίοδος αποθήκευσης κρατήσεων στο Excel
-# -------------------------------------------------------------
 if UPDATE_FULL_HISTORY:
-    # Εσύ ορίζεις ποιο διάστημα να κατεβάζει & αποθηκεύει
-    START_MONTH = 1   # Π.χ. Μάρτιος
-    END_MONTH = 10     # Π.χ. Ιούνιος
+    START_MONTH = 1
+    END_MONTH = 10
     YEAR = 2025
-
     from_date = date(YEAR, START_MONTH, 1).strftime("%Y-%m-%d")
-
-    # Υπολογίζει την τελευταία ημέρα του END_MONTH
     if END_MONTH == 12:
         to_date = date(YEAR, 12, 31).strftime("%Y-%m-%d")
     else:
         to_date = (date(YEAR, END_MONTH + 1, 1) - timedelta(days=1)).strftime("%Y-%m-%d")
-
 else:
-    # Όταν είναι False, φέρνει κρατήσεις μέχρι χθες, αλλά ΔΕΝ τις αποθηκεύει
-    from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")  # Από αρχή έτους
+    from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
     to_date = yesterday.strftime("%Y-%m-%d")
-
 
 # -------------------------------------------------------------
 # Συναρτήσεις υπολογισμού
@@ -137,54 +140,6 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Συνάρτηση upload με debug
-# -------------------------------------------------------------
-
-def upload_file_to_github(file_path, repo, branch="main", commit_message="Auto update file"):
-    github_token = os.getenv("GITHUB_TOKEN")
-    if not github_token:
-        return  # Δεν υπάρχει token, απλά σταματάει
-
-    filename = os.path.basename(file_path)
-
-    # Διάβασμα αρχείου
-    try:
-        with open(file_path, "rb") as f:
-            content = base64.b64encode(f.read()).decode()
-    except:
-        return  # Αν αποτύχει το διάβασμα, σταματάει
-
-    url = f"https://api.github.com/repos/{repo}/contents/{filename}"
-
-    # Έλεγχος αν υπάρχει ήδη το αρχείο
-    try:
-        response = requests.get(url, headers={"Authorization": f"token {github_token}"})
-        if response.status_code == 200:
-            sha = response.json()["sha"]
-        elif response.status_code == 404:
-            sha = None
-        else:
-            return
-    except:
-        return
-
-    data = {
-        "message": f"{commit_message} on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "content": content,
-        "branch": branch
-    }
-    if sha:
-        data["sha"] = sha
-
-    # Upload/Update
-    try:
-        r = requests.put(url, headers={"Authorization": f"token {github_token}"}, json=data)
-        # Δεν εμφανίζουμε κανένα μήνυμα
-        return
-    except:
-        return
-
-# -------------------------------------------------------------
 # Φόρτωση Excel ή κενά DataFrames
 # -------------------------------------------------------------
 try:
@@ -195,27 +150,13 @@ except FileNotFoundError:
         "Platform","Guests","Total Price","Booking Fee",
         "Price Without Tax","Airstay Commission","Owner Profit","Month"
     ])
-# -------------------------------------------------------------
-# Χωρισμός παλιών THRESH σε A1, A2, A3
-# -------------------------------------------------------------
-THRESH_MAPPING = {
-    563628: "THRESH",
-    563631,: "THRESH",
-    1200587: "THRESH A3",
-    563634: "THRESH A4",
-    563637: "THRESH",
-    563640: "THRESH",
-    563643: "THRESH",
-}
 
+# Εφαρμογή THRESH mapping στα υπάρχοντα δεδομένα
 reservations_df["Apartment"] = reservations_df.apply(
     lambda row: THRESH_MAPPING.get(row["ID"], row["Apartment"])
     if row["Apartment"].strip().upper() == "THRESH" else row["Apartment"],
     axis=1
 )
-
-# Αποθήκευση νέου Excel με τα split THRESH
-reservations_df.to_excel(RESERVATIONS_FILE, index=False)
 
 try:
     expenses_df = pd.read_excel(EXPENSES_FILE)
@@ -299,12 +240,10 @@ for apt_name, id_list in APARTMENTS.items():
             else:
                 break
 
-# Προσθήκη νέων κρατήσεων στο Excel
 if all_rows and UPDATE_FULL_HISTORY:
     reservations_df = pd.concat([reservations_df, pd.DataFrame(all_rows)], ignore_index=True)
     reservations_df.drop_duplicates(subset=["ID"], inplace=True)
     reservations_df.to_excel(RESERVATIONS_FILE, index=False)
-    upload_file_to_github(RESERVATIONS_FILE, repo="tasoszaf/AIRSTAY")
 
 # -------------------------------------------------------------
 # Sidebar επιλογής καταλύματος
@@ -328,7 +267,6 @@ months_el = {
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
-# Κατανομή κρατήσεων ανά ημέρα/μήνα
 for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment].iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
@@ -342,11 +280,10 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         day = arrival + pd.Timedelta(days=i)
         month = day.month
         if month > today.month:
-            continue  # αγνοούμε μελλοντικούς μήνες
+            continue
         monthly_metrics[month]["Total Price"] += price_per_day
         monthly_metrics[month]["Owner Profit"] += owner_profit_per_day
 
-# Προσθήκη εξόδων ανά μήνα
 for month in range(1, today.month+1):
     df_exp_month = expenses_df[
         (expenses_df["Month"]==month) & 
@@ -355,7 +292,6 @@ for month in range(1, today.month+1):
     expenses_total = df_exp_month["Amount"].apply(parse_amount).sum()
     monthly_metrics[month]["Total Expenses"] = expenses_total
 
-# Δημιουργία DataFrame για εμφάνιση
 monthly_table = pd.DataFrame([
     {
         "Μήνας": months_el[m],
@@ -369,109 +305,7 @@ monthly_table = pd.DataFrame([
 st.subheader(f"📊 Metrics ανά μήνα ({selected_apartment})")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
-# -------------------------------------------------------------
-# Εμφάνιση όλων των κρατήσεων
-# -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
 filtered_df = reservations_df[reservations_df["Apartment"]==selected_apartment].copy()
 filtered_df = filtered_df.sort_values(["Arrival"])
 st.dataframe(filtered_df, width="stretch", hide_index=True)
-
-
-# -------------------------------------------------------------
-# 💰 Διαχείριση Εξόδων
-# -------------------------------------------------------------
-import uuid
-import pandas as pd
-from datetime import date
-import streamlit as st
-
-# -------------------------------
-# Αρχικοποίηση ή φόρτωση Excel
-# -------------------------------
-EXPENSES_FILE = "expenses.xlsx"
-
-try:
-    expenses_df = pd.read_excel(EXPENSES_FILE)
-except FileNotFoundError:
-    expenses_df = pd.DataFrame(columns=[
-        "ID","Date","Month","Accommodation","Category","Amount","Description"
-    ])
-
-# Εξασφάλιση ύπαρξης μοναδικού ID για κάθε γραμμή
-if "ID" not in expenses_df.columns:
-    expenses_df["ID"] = [str(uuid.uuid4()) for _ in range(len(expenses_df))]
-
-# -------------------------------------------------------------
-# Καταχώρηση νέου εξόδου
-# -------------------------------------------------------------
-st.subheader("💰 Καταχώρηση Εξόδων")
-
-with st.form("expenses_form", clear_on_submit=True):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        exp_date = st.date_input("Ημερομηνία", value=date.today())
-    with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-    with col3:
-        exp_category = st.selectbox("Κατηγορία", [
-            "Cleaning", "Linen", "Maintenance", "Utilities", "Supplies", "Other"
-        ])
-    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
-    exp_description = st.text_input("Περιγραφή (προαιρετική)")
-    submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
-
-    if submitted:
-        new_row = pd.DataFrame([{
-            "ID": str(uuid.uuid4()),
-            "Date": exp_date.strftime("%Y-%m-%d"),
-            "Month": exp_date.month,
-            "Accommodation": exp_accommodation.upper(),
-            "Category": exp_category,
-            "Amount": exp_amount,
-            "Description": exp_description
-        }])
-        expenses_df = pd.concat([expenses_df, new_row], ignore_index=True)
-        expenses_df.to_excel(EXPENSES_FILE, index=False)
-        st.success("✅ Το έξοδο καταχωρήθηκε επιτυχώς!")
-
-# -------------------------------------------------------------
-# Εμφάνιση & Διαγραφή εξόδων (σίγουρη εκδοχή)
-# -------------------------------------------------------------
-st.subheader("💸 Καταχωρημένα Έξοδα")
-
-selected_apartment_upper = selected_apartment.upper()
-
-# Φίλτρο για το επιλεγμένο κατάλυμα
-filtered_expenses = expenses_df[
-    expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment_upper
-].copy().sort_values("Date").reset_index(drop=True)
-
-if filtered_expenses.empty:
-    st.info("Δεν υπάρχουν έξοδα για αυτό το κατάλυμα.")
-else:
-    st.markdown("### 📋 Λίστα Εξόδων")
-
-    # Εμφάνιση κάθε εξόδου σε ξεχωριστό container
-    for i, row in filtered_expenses.iterrows():
-        with st.container():
-            st.markdown(f"**Ημερομηνία:** {row['Date']}  |  **Κατηγορία:** {row['Category']}")
-            st.markdown(f"**Ποσό:** {row['Amount']} €")
-            st.markdown(f"**Περιγραφή:** {row.get('Description','-')}")
-
-            # --- Κουμπί διαγραφής (με μοναδικό key) ---
-            delete_key = f"delete_btn_{i}_{row['ID']}"
-            if st.button("🗑️ Διαγραφή", key=delete_key):
-                expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
-                expenses_df.to_excel(EXPENSES_FILE, index=False)
-                st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε!")
-                st.experimental_rerun()
-
-            st.divider()  # γραμμή διαχωρισμού μεταξύ εξόδων
-
-    # Υπολογισμός συνολικού ποσού
-    total_expenses = filtered_expenses["Amount"].sum()
-    st.markdown(f"### 💵 **Σύνολο Εξόδων:** {total_expenses:.2f} €")
-
-
-
