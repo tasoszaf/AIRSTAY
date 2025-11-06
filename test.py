@@ -37,9 +37,9 @@ APARTMENTS = {
     "CHELI": [2146456,2146461],
     "AKALI": [1713746],
     "NAMI": [1275248],
+    "THRESH": [563628,563631,563637,563640,563643],
     "THRESH A3": [1200587],
     "THRESH A4": [563634],
-    "THRESH": [563628,563631,563637,563640,563643],
     "ZILEAN": [1756004,1756007,1756010,1756013,1756016,1756019,1756022,1756025,1756031],
     "NAUTILUS": [563712,563724,563718,563721,563715,563727],
     "ANIVIA": [563703,563706],
@@ -195,6 +195,27 @@ except FileNotFoundError:
         "Platform","Guests","Total Price","Booking Fee",
         "Price Without Tax","Airstay Commission","Owner Profit","Month"
     ])
+# -------------------------------------------------------------
+# Χωρισμός παλιών THRESH σε A1, A2, A3
+# -------------------------------------------------------------
+THRESH_MAPPING = {
+    563628: "THRESH",
+    563631,: "THRESH",
+    1200587: "THRESH A3",
+    563634]: "THRESH A4",
+    563637: "THRESH",
+    563640: "THRESH",
+    563643: "THRESH",
+}
+
+reservations_df["Apartment"] = reservations_df.apply(
+    lambda row: THRESH_MAPPING.get(row["ID"], row["Apartment"])
+    if row["Apartment"].strip().upper() == "THRESH" else row["Apartment"],
+    axis=1
+)
+
+# Αποθήκευση νέου Excel με τα split THRESH
+reservations_df.to_excel(RESERVATIONS_FILE, index=False)
 
 try:
     expenses_df = pd.read_excel(EXPENSES_FILE)
