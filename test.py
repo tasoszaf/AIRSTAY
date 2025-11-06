@@ -202,7 +202,7 @@ THRESH_MAPPING = {
     563628: "THRESH",
     563631,: "THRESH",
     1200587: "THRESH A3",
-    563634]: "THRESH A4",
+    563634: "THRESH A4",
     563637: "THRESH",
     563640: "THRESH",
     563643: "THRESH",
@@ -310,7 +310,10 @@ if all_rows and UPDATE_FULL_HISTORY:
 # Sidebar επιλογής καταλύματος
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
-selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+selected_apartment = st.sidebar.selectbox(
+    "Κατάλυμα",
+    sorted(reservations_df["Apartment"].unique())
+)
 
 # -------------------------------------------------------------
 # Ονόματα μηνών για εμφανή labels
