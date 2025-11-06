@@ -24,7 +24,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
-UPDATE_FULL_HISTORY = False
+UPDATE_FULL_HISTORY = True
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
