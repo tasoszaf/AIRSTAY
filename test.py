@@ -24,7 +24,7 @@ RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
 # Flag για πλήρη ιστορικό
-UPDATE_FULL_HISTORY = False  # True φέρνει από 1/1 έως προηγούμενο μήνα
+UPDATE_FULL_HISTORY = True  # True φέρνει από 1/1 έως προηγούμενο μήνα
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
