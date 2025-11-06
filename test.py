@@ -70,11 +70,34 @@ APARTMENT_SETTINGS = {
 # Ημερομηνίες
 # -------------------------------------------------------------
 today = date.today()
+yesterday = today - timedelta(days=1)
+
+# 👉 Αυτές οι ημερομηνίες χρησιμοποιούνται ΜΟΝΟ για εμφάνιση
+display_from_date = "2025-01-01"  # Από πότε θέλεις να ξεκινάει η εμφάνιση στο dashboard
+display_to_date = yesterday.strftime("%Y-%m-%d")
+
+# -------------------------------------------------------------
+# Περίοδος αποθήκευσης κρατήσεων στο Excel
+# -------------------------------------------------------------
 if UPDATE_FULL_HISTORY:
-    from_date = "2025-01-01"
+    # Εσύ ορίζεις ποιο διάστημα να κατεβάζει & αποθηκεύει
+    START_MONTH = 1   # Π.χ. Μάρτιος
+    END_MONTH = 10     # Π.χ. Ιούνιος
+    YEAR = 2025
+
+    from_date = date(YEAR, START_MONTH, 1).strftime("%Y-%m-%d")
+
+    # Υπολογίζει την τελευταία ημέρα του END_MONTH
+    if END_MONTH == 12:
+        to_date = date(YEAR, 12, 31).strftime("%Y-%m-%d")
+    else:
+        to_date = (date(YEAR, END_MONTH + 1, 1) - timedelta(days=1)).strftime("%Y-%m-%d")
+
 else:
-    from_date = date(today.year, today.month, 1).strftime("%Y-%m-%d")
-to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    # Όταν είναι False, φέρνει κρατήσεις μέχρι χθες, αλλά ΔΕΝ τις αποθηκεύει
+    from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")  # Από αρχή έτους
+    to_date = yesterday.strftime("%Y-%m-%d")
+
 
 # -------------------------------------------------------------
 # Συναρτήσεις υπολογισμού
@@ -252,13 +275,11 @@ for apt_name, id_list in APARTMENTS.items():
                 break
 
 # Προσθήκη νέων κρατήσεων στο Excel
-if all_rows:
+if all_rows and UPDATE_FULL_HISTORY:
     reservations_df = pd.concat([reservations_df, pd.DataFrame(all_rows)], ignore_index=True)
     reservations_df.drop_duplicates(subset=["ID"], inplace=True)
     reservations_df.to_excel(RESERVATIONS_FILE, index=False)
-
-    # Upload στο GitHub
-    upload_file_to_github(RESERVATIONS_FILE, repo="tasoszaf/AIRSTAY")  # βάλε το δικό σου repo
+    upload_file_to_github(RESERVATIONS_FILE, repo="tasoszaf/AIRSTAY")
 
 # -------------------------------------------------------------
 # Sidebar επιλογής καταλύματος
