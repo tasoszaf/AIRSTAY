@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime, date, timedelta
-from collections import defaultdict
+from datetime import datetime, date
 import uuid
 import os
 
@@ -12,44 +11,76 @@ import os
 st.set_page_config(page_title="Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
 
+# -------------------------------------------------------------
+# API Settings
+# -------------------------------------------------------------
 API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
 # -------------------------------------------------------------
-# Paths για αρχεία Excel
+# Apartments Definitions
+# -------------------------------------------------------------
+APARTMENTS = {
+    "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
+            1439931,1439933,1439935,1439937,1439939,1439971,1439973,1439975,1439977,
+            1439979,1439981,1439983,1439985],
+    "KOMOS": [2160281,2160286,2160291],
+    "CHELI": [2146456,2146461],
+    "AKALI": [1713746],
+    "NAMI": [1275248],
+    "THRESH": [563628,563631,563637,563640,563643],
+    "THRESH A3": [1200587],
+    "THRESH A4": [563634],
+    "ZILEAN": [1756004,1756007,1756010,1756013,1756016,1756019,1756022,1756025,1756031],
+    "NAUTILUS": [563712,563724,563718,563721,563715,563727],
+    "ANIVIA": [563703,563706],
+    "ELISE": [563625,1405415],
+    "ORIANNA": [1607131],
+    "KALISTA": [750921],
+    "JAAX": [2712218],
+    "FINIKAS": [2715193,2715198,2715203,2715208,2715213,
+                2715218,2715223,2715228,2715233,2715238,2715273]
+}
+
+# Αντίστροφο dictionary: ID → Group
+ID_TO_GROUP = {apt_id: group_name for group_name, ids in APARTMENTS.items() for apt_id in ids}
+
+# Ρυθμίσεις καταλυμάτων
+APARTMENT_SETTINGS = {
+    "ZED": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "NAMI": {"winter_base": 4, "summer_base": 15, "airstay_commission": 0},
+    "THRESH": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
+    "THRESH A3": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "THRESH A4": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
+    "KALISTA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
+    "KOMOS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "CHELI": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "AKALI": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0},
+    "ZILEAN": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
+    "NAUTILUS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.186},
+    "ANIVIA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
+    "ELISE": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
+    "ORIANNA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
+    "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0},
+    "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+}
+
+# -------------------------------------------------------------
+# Paths
 # -------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
 # -------------------------------------------------------------
-# Καταλύματα και Grouping με βάση apartment IDs
-# -------------------------------------------------------------
-APARTMENT_GROUPS = {
-    "THRESH": [563628,563631,563637,563640,563643],
-    "THRESH A3": [1200587],
-    "THRESH A4": [563634],
-    "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
-            1439931,1439933,1439935,1439937,1439939,1439971,1439973,1439975,1439977,
-            1439979,1439981,1439983,1439985],
-}
-
-APARTMENT_SETTINGS = {
-    "THRESH": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
-    "THRESH A3": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    "THRESH A4": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
-    "ZED": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-}
-
-# -------------------------------------------------------------
-# Ημερομηνίες για fetch
+# Dates
 # -------------------------------------------------------------
 today = date.today()
 from_date = "2025-01-01"
 to_date = today.strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
-# Συνάρτηση υπολογισμού τιμών
+# Helper Functions
 # -------------------------------------------------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     if not price or not nights:
@@ -73,7 +104,7 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.18
     else:
         rate = 0.00
-    return round((price or 0)*rate, 2)
+    return round((price or 0) * rate, 2)
 
 def parse_amount(v):
     try:
@@ -82,7 +113,7 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Φόρτωση εξόδων
+# Load Expenses
 # -------------------------------------------------------------
 try:
     expenses_df = pd.read_excel(EXPENSES_FILE)
@@ -90,11 +121,11 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["ID","Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Fetch κρατήσεων για όλα τα groups
+# Fetch Reservations
 # -------------------------------------------------------------
 all_bookings = []
 
-for group_name, ids in APARTMENT_GROUPS.items():
+for group_name, ids in APARTMENTS.items():
     for apt_id in ids:
         page = 1
         while True:
@@ -120,7 +151,8 @@ for group_name, ids in APARTMENT_GROUPS.items():
                 break
 
             for b in bookings:
-                b["group"] = group_name
+                apt_id = b["apartment"]["id"]
+                b["group"] = ID_TO_GROUP.get(apt_id, "UNKNOWN")
                 all_bookings.append(b)
 
             if page >= data.get("page_count", 1):
@@ -129,7 +161,7 @@ for group_name, ids in APARTMENT_GROUPS.items():
                 page += 1
 
 # -------------------------------------------------------------
-# Υπολογισμός metrics για κάθε booking
+# Process Bookings
 # -------------------------------------------------------------
 bookings_list = []
 for b in all_bookings:
@@ -138,14 +170,15 @@ for b in all_bookings:
     nights = max((departure - arrival).days, 1)
     price = float(b.get("price") or 0)
     platform = b.get("channel", {}).get("name", "Direct booking")
-    price_wo_tax = compute_price_without_tax(price, nights, arrival.month, b["group"])
+    group_name = b["group"]
+    price_wo_tax = compute_price_without_tax(price, nights, arrival.month, group_name)
     fee = compute_booking_fee(platform, price)
-    airstay_commission = round(price_wo_tax * APARTMENT_SETTINGS.get(b["group"], {}).get("airstay_commission",0),2)
-    owner_profit = round(price_wo_tax - fee - airstay_commission,2)
+    airstay_commission = round(price_wo_tax * APARTMENT_SETTINGS.get(group_name, {}).get("airstay_commission", 0), 2)
+    owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
 
     bookings_list.append({
         "ID": b["id"],
-        "Group": b["group"],
+        "Group": group_name,
         "Apartment ID": b["apartment"]["id"],
         "Apartment Name": b["apartment"]["name"],
         "Guest Name": b.get("guest-name"),
@@ -162,56 +195,57 @@ for b in all_bookings:
 bookings_df = pd.DataFrame(bookings_list)
 
 # -------------------------------------------------------------
-# Metrics ανά group με έξοδα
+# Metrics Calculation
 # -------------------------------------------------------------
 monthly_metrics = []
 
-for group_name in APARTMENT_GROUPS.keys():
-    df_group = bookings_df[bookings_df["Group"]==group_name]
+for group_name in APARTMENTS.keys():
+    df_group = bookings_df[bookings_df["Group"] == group_name]
     total_price = df_group["Total Price"].sum()
     total_owner = df_group["Owner Profit"].sum()
 
-    # Υπολογισμός εξόδων
     df_exp = expenses_df[expenses_df["Accommodation"].str.upper().str.strip() == group_name.upper()]
     total_exp = df_exp["Amount"].apply(parse_amount).sum()
 
-    net_profit = total_owner - total_exp
-
     monthly_metrics.append({
         "Group": group_name,
-        "Total Price (€)": round(total_price,2),
-        "Total Owner Profit (€)": round(total_owner,2),
-        "Total Expenses (€)": round(total_exp,2),
-        "Net Profit (€)": round(net_profit,2),
-        "Bookings Count": len(df_group)
+        "Total Price (€)": round(total_price, 2),
+        "Total Owner Profit (€)": round(total_owner, 2),
+        "Total Expenses (€)": round(total_exp, 2)
     })
 
 metrics_df = pd.DataFrame(monthly_metrics)
 
-st.subheader("📊 Metrics ανά Group με Έξοδα")
-st.dataframe(metrics_df, width=1000)
+# -------------------------------------------------------------
+# UI - Selection & Display
+# -------------------------------------------------------------
+selected_group = st.selectbox("Επιλογή Group", APARTMENTS.keys())
 
-# -------------------------------------------------------------
-# Επιλογή group για εμφάνιση κρατήσεων
-# -------------------------------------------------------------
-selected_group = st.selectbox("Επιλογή Group για κρατήσεις", APARTMENT_GROUPS.keys())
-filtered_df = bookings_df[bookings_df["Group"]==selected_group]
+filtered_bookings = bookings_df[bookings_df["Group"] == selected_group]
+filtered_metrics = metrics_df[metrics_df["Group"] == selected_group].iloc[0]
+
+st.subheader(f"📊 Metrics για {selected_group}")
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Price (€)", f"{filtered_metrics['Total Price (€)']:,}")
+col2.metric("Total Expenses (€)", f"{filtered_metrics['Total Expenses (€)']:,}")
+col3.metric("Total Owner Profit (€)", f"{filtered_metrics['Total Owner Profit (€)']:,}")
+
 st.subheader(f"📅 Κρατήσεις για {selected_group}")
-st.dataframe(filtered_df, width=1000)
+st.dataframe(filtered_bookings, width=1000)
 
 # -------------------------------------------------------------
-# Καταχώρηση νέου εξόδου
+# Expense Form
 # -------------------------------------------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
-
 with st.form("expenses_form", clear_on_submit=True):
     col1, col2, col3 = st.columns(3)
     with col1:
         exp_date = st.date_input("Ημερομηνία", value=date.today())
     with col2:
-        exp_accommodation = st.selectbox("Κατάλυμα", list(APARTMENT_GROUPS.keys()))
+        exp_accommodation = st.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
     with col3:
         exp_category = st.text_input("Κατηγορία")
+
     exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
     exp_description = st.text_input("Περιγραφή (προαιρετική)")
     submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
