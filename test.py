@@ -188,8 +188,8 @@ for apt_name, id_list in APARTMENTS.items():
 
                 all_rows.append({
                     "ID": b.get("id"),
-                    "Apartment": apt_name,
-                    "Apartment_ID": apt_id,
+                    "Apartment": b["apartment"]["name"],
+                    "Apartment_ID": b["apartment"]["id"],
                     "Guest Name": b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                     "Departure": departure_dt.strftime("%Y-%m-%d"),
