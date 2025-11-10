@@ -146,7 +146,7 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Ανάκτηση νέων κρατήσεων από Smoobu (με Apartment ID)
+# Ανάκτηση νέων κρατήσεων από Smoobu (με πραγματικό Apartment ID)
 # -------------------------------------------------------------
 all_rows = []
 for apt_name, id_list in APARTMENTS.items():
@@ -199,10 +199,13 @@ for apt_name, id_list in APARTMENTS.items():
                 airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
                 owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
 
+                # Πραγματικό Apartment ID από το API
+                apt_real_id = b.get("apartmentId")
+
                 all_rows.append({
                     "ID": b.get("id"),
                     "Apartment": apt_name,
-                    "Apartment ID": apt_id,          # Νέα στήλη για Apartment ID
+                    "Apartment ID": apt_real_id,  # πραγματικό ID
                     "Guest Name": b.get("guestName") or b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                     "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -233,7 +236,6 @@ if all_rows and UPDATE_FULL_HISTORY:
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-
 # -------------------------------------------------------------
 # Ονόματα μηνών για εμφανή labels
 # -------------------------------------------------------------
