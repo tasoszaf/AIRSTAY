@@ -5,7 +5,6 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
 import base64
-import uuid
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -76,12 +75,11 @@ APARTMENT_SETTINGS = {
 # -------------------------------------------------------------
 today = date.today()
 yesterday = today - timedelta(days=1)
-
 from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
 to_date = yesterday.strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
-# Συνάρτηση υπολογισμού τιμής χωρίς φόρους
+# Συναρτήσεις υπολογισμού
 # -------------------------------------------------------------
 def compute_price_without_tax(price, nights, month, apt_name):
     if not price or not nights:
@@ -120,21 +118,21 @@ try:
     reservations_df = pd.read_excel(RESERVATIONS_FILE)
 except FileNotFoundError:
     reservations_df = pd.DataFrame(columns=[
-        "ID","Apartment","Guest Name","Arrival","Departure","Days",
+        "ID","Apartment","Apartment_ID","Guest Name","Arrival","Departure","Days",
         "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit","Month",
-        "Apartment_ID"
+        "Price Without Tax","Airstay Commission","Owner Profit","Month","Group"
     ])
 
 try:
     expenses_df = pd.read_excel(EXPENSES_FILE)
 except FileNotFoundError:
-    expenses_df = pd.DataFrame(columns=["ID","Date","Month","Accommodation","Category","Amount","Description"])
+    expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
 # Ανάκτηση νέων κρατήσεων από Smoobu
 # -------------------------------------------------------------
 all_rows = []
+
 for apt_name, id_list in APARTMENTS.items():
     for apt_id in id_list:
         params = {
@@ -188,8 +186,8 @@ for apt_name, id_list in APARTMENTS.items():
 
                 all_rows.append({
                     "ID": b.get("id"),
-                    "Apartment": b["apartment"]["name"],
-                    "Apartment_ID": b["apartment"]["id"],
+                    "Apartment": b.get("apartment", {}).get("name") or apt_name,
+                    "Apartment_ID": b.get("apartment", {}).get("id") or apt_id,
                     "Guest Name": b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                     "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -201,7 +199,8 @@ for apt_name, id_list in APARTMENTS.items():
                     "Price Without Tax": round(price_wo_tax,2),
                     "Airstay Commission": round(airstay_commission,2),
                     "Owner Profit": round(owner_profit,2),
-                    "Month": arrival_dt.month
+                    "Month": arrival_dt.month,
+                    "Group": apt_name
                 })
 
             if data.get("page") and data.get("page") < data.get("page_count",1):
@@ -211,22 +210,33 @@ for apt_name, id_list in APARTMENTS.items():
 
 # Προσθήκη νέων κρατήσεων στο Excel
 if all_rows:
-    reservations_df = pd.concat([reservations_df, pd.DataFrame(all_rows)], ignore_index=True)
-    reservations_df.drop_duplicates(subset=["ID"], inplace=True)
+    reservations_df = pd.DataFrame(all_rows)
     reservations_df.to_excel(RESERVATIONS_FILE, index=False)
 
 # -------------------------------------------------------------
 # Sidebar επιλογής καταλύματος
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
-selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+selected_apartment_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+selected_ids = APARTMENTS[selected_apartment_group]
+
+# Φιλτράρισμα με βάση το group/IDs
+filtered_df = reservations_df[reservations_df["Apartment_ID"].isin(selected_ids)]
+
+# -------------------------------------------------------------
+# Ονόματα μηνών
+# -------------------------------------------------------------
+months_el = {
+    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+}
 
 # -------------------------------------------------------------
 # Υπολογισμός metrics ανά μήνα
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
-for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment].iterrows():
+for idx, row in filtered_df.iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
     days_total = (departure - arrival).days
@@ -243,18 +253,14 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         monthly_metrics[month]["Total Price"] += price_per_day
         monthly_metrics[month]["Owner Profit"] += owner_profit_per_day
 
+# Προσθήκη εξόδων ανά μήνα
 for month in range(1, today.month+1):
     df_exp_month = expenses_df[
         (expenses_df["Month"]==month) & 
-        (expenses_df["Accommodation"]==selected_apartment)
+        (expenses_df["Accommodation"].str.upper()==selected_apartment_group.upper())
     ]
     expenses_total = df_exp_month["Amount"].apply(parse_amount).sum()
     monthly_metrics[month]["Total Expenses"] = expenses_total
-
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
 
 monthly_table = pd.DataFrame([
     {
@@ -266,10 +272,12 @@ monthly_table = pd.DataFrame([
     for m,v in sorted(monthly_metrics.items())
 ])
 
-st.subheader(f"📊 Metrics ανά μήνα ({selected_apartment})")
+st.subheader(f"📊 Metrics ανά μήνα ({selected_apartment_group})")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
-st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
-filtered_df = reservations_df[reservations_df["Apartment"]==selected_apartment].copy()
+# -------------------------------------------------------------
+# Εμφάνιση κρατήσεων
+# -------------------------------------------------------------
+st.subheader(f"📅 Κρατήσεις ({selected_apartment_group})")
 filtered_df = filtered_df.sort_values(["Arrival"])
 st.dataframe(filtered_df, width="stretch", hide_index=True)
