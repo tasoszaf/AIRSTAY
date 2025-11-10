@@ -49,7 +49,7 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
-RESERVATIONS_FILE = "reservations.xlsx"
+RESERVATIONS_FILE = "reservations-22.xlsx"
 EXPENSES_FILE = "expenses.xlsx"
 API_URL = "https://login.smoobu.com/api/reservations"
 API_TOKEN = st.secrets["SMOOBU_TOKEN"] if "SMOOBU_TOKEN" in st.secrets else os.getenv("SMOOBU_TOKEN")
@@ -100,7 +100,7 @@ def fetch_reservations():
             all_rows.append({
                 "ID": b.get("id"),
                 "Group": apt_name,
-                "Apartment ID": apt_real_id,
+                "Apartment_id": apt_real_id,
                 "Guest Name": b.get("guestName"),
                 "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                 "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -108,6 +108,7 @@ def fetch_reservations():
                 "Platform": platform,
                 "Guests": guests,
                 "Total Price": round(price,2),
+                "Booking Fee": round(price*0.05,2),  # παράδειγμα υπολογισμού fee
                 "Price Without Tax": round(price_wo_tax,2),
                 "Airstay Commission": round(airstay_commission,2),
                 "Owner Profit": round(owner_profit,2),
@@ -165,6 +166,10 @@ else:
     except FileNotFoundError:
         df_res = pd.DataFrame()
 
+# Δημιουργία Group αν δεν υπάρχει
+if "Group" not in df_res.columns and "Apartment" in df_res.columns:
+    df_res["Group"] = df_res["Apartment"]
+
 # Expenses
 df_exp = load_expenses()
 
@@ -189,9 +194,8 @@ st.dataframe(metrics_table, hide_index=True)
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(
     df_res[df_res["Group"]==selected_group][[
-        "ID", "Guest Name", "Arrival", "Departure", "Days",
-        "Platform", "Guests", "Total Price", "Price Without Tax",
-        "Airstay Commission", "Owner Profit", "Apartment ID", "Group"
+        "ID","Group","Apartment_id","Guest Name","Arrival","Departure","Days","Platform","Guests",
+        "Total Price","Booking Fee","Price Without Tax","Airstay Commission","Owner Profit","Month"
     ]].sort_values("Arrival"),
     hide_index=True
 )
