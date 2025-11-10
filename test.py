@@ -21,14 +21,13 @@ reservations_url = "https://login.smoobu.com/api/reservations"
 # Paths για αρχεία Excel
 # -------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations-21.xlsx")
+RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
-# Flag για πλήρη ιστορικό
-UPDATE_FULL_HISTORY = True  # True φέρνει από 1/1 έως προηγούμενο μήνα
+UPDATE_FULL_HISTORY = False
 
 # -------------------------------------------------------------
-# Καταλύματα & Settings (THRESH χωρισμένο σε 3 γκρουπ)
+# Καταλύματα & Settings
 # -------------------------------------------------------------
 APARTMENTS = {
     "ZED": [1439913,1439915,1439917,1439919,1439921,1439923,1439925,1439927,1439929,
@@ -143,10 +142,10 @@ except FileNotFoundError:
 try:
     expenses_df = pd.read_excel(EXPENSES_FILE)
 except FileNotFoundError:
-    expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
+    expenses_df = pd.DataFrame(columns=["ID","Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Ανάκτηση νέων κρατήσεων από Smoobu (με πραγματικό Apartment ID)
+# Ανάκτηση νέων κρατήσεων από Smoobu
 # -------------------------------------------------------------
 all_rows = []
 for apt_name, id_list in APARTMENTS.items():
@@ -199,13 +198,16 @@ for apt_name, id_list in APARTMENTS.items():
                 airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
                 owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
 
-                # Πραγματικό Apartment ID από το API
-                apt_real_id = b.get("apartmentId")
+                apt_real_id = None
+                if "apartment" in b and "id" in b["apartment"]:
+                    apt_real_id = b["apartment"]["id"]
+                else:
+                    apt_real_id = apt_id
 
                 all_rows.append({
                     "ID": b.get("id"),
                     "Apartment": apt_name,
-                    "Apartment ID": apt_real_id,  # πραγματικό ID
+                    "Apartment ID": apt_real_id,
                     "Guest Name": b.get("guestName") or b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                     "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -225,7 +227,6 @@ for apt_name, id_list in APARTMENTS.items():
             else:
                 break
 
-# Προσθήκη νέων κρατήσεων στο Excel
 if all_rows and UPDATE_FULL_HISTORY:
     reservations_df = pd.concat([reservations_df, pd.DataFrame(all_rows)], ignore_index=True)
     reservations_df.drop_duplicates(subset=["ID"], inplace=True)
@@ -236,21 +237,17 @@ if all_rows and UPDATE_FULL_HISTORY:
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-# -------------------------------------------------------------
-# Ονόματα μηνών για εμφανή labels
-# -------------------------------------------------------------
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
 
 # -------------------------------------------------------------
-# Υπολογισμός metrics ανά μήνα
+# Metrics & Πίνακας Κρατήσεων
 # -------------------------------------------------------------
+filtered_df = reservations_df[reservations_df["Apartment"] == selected_apartment].copy()
+filtered_df = filtered_df.sort_values(["Arrival"])
+st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
+st.dataframe(filtered_df, width="stretch", hide_index=True)
+
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
-
-# Κατανομή κρατήσεων ανά ημέρα/μήνα
-for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment].iterrows():
+for idx, row in filtered_df.iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
     days_total = (departure - arrival).days
@@ -262,64 +259,33 @@ for idx, row in reservations_df[reservations_df["Apartment"]==selected_apartment
         day = arrival + pd.Timedelta(days=i)
         month = day.month
         if month > today.month:
-            continue  # αγνοούμε μελλοντικούς μήνες
+            continue
         monthly_metrics[month]["Total Price"] += price_per_day
         monthly_metrics[month]["Owner Profit"] += owner_profit_per_day
 
-# Προσθήκη εξόδων ανά μήνα
 for month in range(1, today.month+1):
-    df_exp_month = expenses_df[
-        (expenses_df["Month"]==month) & (expenses_df["Accommodation"]==selected_apartment)
-    ]
-    expenses_total = df_exp_month["Amount"].apply(parse_amount).sum()
-    monthly_metrics[month]["Total Expenses"] = expenses_total
+    df_exp_month = expenses_df[(expenses_df["Month"]==month) &
+                               (expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment.upper())]
+    monthly_metrics[month]["Total Expenses"] = df_exp_month["Amount"].apply(parse_amount).sum()
 
-# Δημιουργία DataFrame για εμφάνιση
+months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+             7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
+
 monthly_table = pd.DataFrame([
     {
         "Μήνας": months_el[m],
         "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
         "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
         "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
-    } for m,v in sorted(monthly_metrics.items())
+    }
+    for m,v in sorted(monthly_metrics.items())
 ])
 
 st.subheader(f"📊 Metrics ανά μήνα ({selected_apartment})")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Εμφάνιση όλων των κρατήσεων
-# -------------------------------------------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_apartment})")
-filtered_df = reservations_df[reservations_df["Apartment"]==selected_apartment].copy()
-filtered_df = filtered_df.sort_values(["Arrival"])
-st.dataframe(filtered_df, width="stretch", hide_index=True)
-
-# -------------------------------------------------------------
 # 💰 Διαχείριση Εξόδων
-# -------------------------------------------------------------
-import uuid
-import pandas as pd
-from datetime import date
-import streamlit as st
-
-# -------------------------------
-# Αρχικοποίηση ή φόρτωση Excel
-# -------------------------------
-EXPENSES_FILE = "expenses.xlsx"
-try:
-    expenses_df = pd.read_excel(EXPENSES_FILE)
-except FileNotFoundError:
-    expenses_df = pd.DataFrame(columns=[
-        "ID","Date","Month","Accommodation","Category","Amount","Description"
-    ])
-
-# Εξασφάλιση ύπαρξης μοναδικού ID για κάθε γραμμή
-if "ID" not in expenses_df.columns:
-    expenses_df["ID"] = [str(uuid.uuid4()) for _ in range(len(expenses_df))]
-
-# -------------------------------------------------------------
-# Καταχώρηση νέου εξόδου
 # -------------------------------------------------------------
 st.subheader("💰 Καταχώρηση Εξόδων")
 with st.form("expenses_form", clear_on_submit=True):
@@ -329,9 +295,7 @@ with st.form("expenses_form", clear_on_submit=True):
     with col2:
         exp_accommodation = st.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
     with col3:
-        exp_category = st.selectbox("Κατηγορία", [
-            "Cleaning", "Linen", "Maintenance", "Utilities", "Supplies", "Other"
-        ])
+        exp_category = st.selectbox("Κατηγορία", ["Cleaning","Linen","Maintenance","Utilities","Supplies","Other"])
     exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
     exp_description = st.text_input("Περιγραφή (προαιρετική)")
     submitted = st.form_submit_button("➕ Καταχώρηση Εξόδου")
@@ -349,27 +313,19 @@ with st.form("expenses_form", clear_on_submit=True):
         expenses_df.to_excel(EXPENSES_FILE, index=False)
         st.success("✅ Το έξοδο καταχωρήθηκε επιτυχώς!")
 
-# -------------------------------------------------------------
-# Εμφάνιση & Διαγραφή εξόδων (σίγουρη εκδοχή)
-# -------------------------------------------------------------
 st.subheader("💸 Καταχωρημένα Έξοδα")
 selected_apartment_upper = selected_apartment.upper()
-# Φίλτρο για το επιλεγμένο κατάλυμα
-filtered_expenses = expenses_df[
-    expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment_upper
-].copy().sort_values("Date").reset_index(drop=True)
+filtered_expenses = expenses_df[expenses_df["Accommodation"].str.strip().str.upper() == selected_apartment_upper].copy()
+filtered_expenses = filtered_expenses.sort_values("Date").reset_index(drop=True)
 
 if filtered_expenses.empty:
     st.info("Δεν υπάρχουν έξοδα για αυτό το κατάλυμα.")
 else:
-    st.markdown("### 📋 Λίστα Εξόδων")
-    # Εμφάνιση κάθε εξόδου σε ξεχωριστό container
     for i, row in filtered_expenses.iterrows():
         with st.container():
             st.markdown(f"**Ημερομηνία:** {row['Date']} | **Κατηγορία:** {row['Category']}")
             st.markdown(f"**Ποσό:** {row['Amount']} €")
             st.markdown(f"**Περιγραφή:** {row.get('Description','-')}")
-            # --- Κουμπί διαγραφής (με μοναδικό key) ---
             delete_key = f"delete_btn_{i}_{row['ID']}"
             if st.button("🗑️ Διαγραφή", key=delete_key):
                 expenses_df = expenses_df[expenses_df["ID"] != row["ID"]].reset_index(drop=True)
@@ -377,8 +333,6 @@ else:
                 st.success(f"✅ Το έξοδο της {row['Date']} διαγράφηκε!")
                 st.experimental_rerun()
 
-st.divider()  # γραμμή διαχωρισμού μεταξύ εξόδων
-
-# Υπολογισμός συνολικού ποσού
+st.divider()
 total_expenses = filtered_expenses["Amount"].sum()
 st.markdown(f"### 💵 **Σύνολο Εξόδων:** {total_expenses:.2f} €")
