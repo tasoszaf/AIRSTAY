@@ -67,8 +67,41 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Ρυθμίσεις True/False & Μήνες
 # -------------------------------------------------------------
-FETCH_FROM_API = False  # True = επιπλέον μήνες από API, False = μόνο Excel + τρέχων μήνας
-MONTHS_TO_FETCH = [1,2,3]  # Αν True, αυτοί οι μήνες θα κατέβουν επιπλέον
+FETCH_FROM_API = True  # True = επιπλέον μήνες από API, False = μόνο Excel + τρέχων μήνας
+MONTHS_TO_FETCH = [1,2,3,4,5,6,7,8,9,10]  # Αν True, αυτοί οι μήνες θα κατέβουν επιπλέον
+
+# -------------------------------------------------------------
+# Helper Functions
+# -------------------------------------------------------------
+def compute_price_without_tax(price, nights, month, apt_name):
+    if not price or not nights:
+        return 0.0
+    settings = APARTMENT_SETTINGS.get(apt_name, {"winter_base": 2, "summer_base": 8})
+    base = settings["winter_base"] if month in [11,12,1,2] else settings["summer_base"]
+    adjusted = price - base * nights
+    return round((adjusted / 1.13) - (adjusted * 0.005), 2)
+
+def compute_booking_fee(platform_name: str, price: float) -> float:
+    if not platform_name:
+        return 0.0
+    p = platform_name.strip().lower()
+    if p in {"website","direct","direct booking","direct-booking","site","web"}:
+        rate = 0.00
+    elif "booking" in p:
+        rate = 0.17
+    elif "airbnb" in p:
+        rate = 0.15
+    elif "expedia" in p:
+        rate = 0.18
+    else:
+        rate = 0.00
+    return round((price or 0) * rate, 2)
+
+def parse_amount(v):
+    try:
+        return float(str(v).replace("€","").strip())
+    except:
+        return 0.0
 
 # -------------------------------------------------------------
 # Load Expenses
@@ -143,24 +176,37 @@ if FETCH_FROM_API and MONTHS_TO_FETCH:
     if months_to_fetch:
         all_bookings.extend(fetch_from_api_for_months(months_to_fetch))
 
-# Μετατροπή σε DataFrame
+# -------------------------------------------------------------
+# Process Bookings & Add Metrics Columns
+# -------------------------------------------------------------
 bookings_list = []
 for b in all_bookings:
     arrival = datetime.strptime(b["arrival"], "%Y-%m-%d")
     departure = datetime.strptime(b["departure"], "%Y-%m-%d")
-    nights = max((departure - arrival).days,1)
+    nights = max((departure - arrival).days, 1)
     price = float(b.get("price") or 0)
+    platform = b.get("channel", {}).get("name", "Direct booking")
+    group_name = b["group"]
+
+    price_wo_tax = compute_price_without_tax(price, nights, arrival.month, group_name)
+    fee = compute_booking_fee(platform, price)
+    airstay_commission = round(price_wo_tax * APARTMENT_SETTINGS.get(group_name, {}).get("airstay_commission", 0), 2)
+    owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
 
     bookings_list.append({
-        "id": b["id"],
-        "group": b["group"],
-        "apartment_id": b["apartment"]["id"],
-        "apartment_name": b["apartment"]["name"],
-        "guest_name": b.get("guest-name"),
-        "arrival": b["arrival"],
-        "departure": b["departure"],
-        "nights": nights,
-        "price": price
+        "ID": b["id"],
+        "Group": group_name,
+        "Apartment ID": b["apartment"]["id"],
+        "Apartment Name": b["apartment"]["name"],
+        "Guest Name": b.get("guest-name"),
+        "Arrival": b["arrival"],
+        "Departure": b["departure"],
+        "Nights": nights,
+        "Total Price (€)": price,
+        "Price Without Tax (€)": price_wo_tax,
+        "Booking Fee (€)": fee,
+        "Airstay Commission (€)": airstay_commission,
+        "Owner Profit (€)": owner_profit
     })
 
 bookings_df_api = pd.DataFrame(bookings_list)
@@ -183,16 +229,9 @@ bookings_df.to_excel(RESERVATIONS_FILE, index=False)
 # Metrics ανά Group
 # -------------------------------------------------------------
 metrics_list = []
-
-def parse_amount(v):
-    try:
-        return float(str(v).replace("€","").strip())
-    except:
-        return 0.0
-
 for group_name in APARTMENTS.keys():
-    df_group = bookings_df[bookings_df["group"] == group_name]
-    total_price = df_group["price"].sum() if not df_group.empty else 0.0
+    df_group = bookings_df[bookings_df["Group"] == group_name]
+    total_price = df_group["Total Price (€)"].sum() if not df_group.empty else 0.0
 
     df_exp = expenses_df[expenses_df["Accommodation"].str.upper().str.strip() == group_name.upper()]
     total_exp = df_exp["Amount"].apply(parse_amount).sum() if not df_exp.empty else 0.0
@@ -224,8 +263,8 @@ col3.metric("Owner Profit (€)", f"{filtered_metrics['Owner Profit (€)']:,}")
 # Εμφάνιση κρατήσεων για το επιλεγμένο Group
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις για {selected_group}")
-filtered_bookings = bookings_df[bookings_df["group"] == selected_group]
-st.dataframe(filtered_bookings, width=1000)
+filtered_bookings = bookings_df[bookings_df["Group"] == selected_group]
+st.dataframe(filtered_bookings, width=1200)
 
 # -------------------------------------------------------------
 # Φόρμα καταχώρησης εξόδων
