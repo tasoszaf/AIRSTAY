@@ -135,7 +135,7 @@ try:
     reservations_df = pd.read_excel(RESERVATIONS_FILE)
 except FileNotFoundError:
     reservations_df = pd.DataFrame(columns=[
-        "ID","Apartment","Guest Name","Arrival","Departure","Days",
+        "ID","Apartment","Apartment ID","Guest Name","Arrival","Departure","Days",
         "Platform","Guests","Total Price","Booking Fee","Price Without Tax",
         "Airstay Commission","Owner Profit","Month"
     ])
@@ -146,11 +146,93 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["Date","Month","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Sidebar επιλογής καταλύματος (με THRESH split)
+# Ανάκτηση νέων κρατήσεων από Smoobu (με Apartment ID)
+# -------------------------------------------------------------
+all_rows = []
+for apt_name, id_list in APARTMENTS.items():
+    for apt_id in id_list:
+        params = {
+            "from": from_date,
+            "to": to_date,
+            "apartmentId": apt_id,
+            "excludeBlocked": "true",
+            "showCancellation": "false",
+            "page": 1,
+            "pageSize": 100,
+        }
+        while True:
+            try:
+                r = requests.get(reservations_url, headers=headers, params=params, timeout=30)
+                r.raise_for_status()
+                data = r.json()
+            except requests.exceptions.RequestException:
+                break
+
+            bookings = data.get("bookings", [])
+            if not bookings:
+                break
+
+            for b in bookings:
+                arrival_str = b.get("arrival")
+                departure_str = b.get("departure")
+                if not arrival_str or not departure_str:
+                    continue
+                try:
+                    arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
+                    departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
+                except:
+                    continue
+
+                platform = (b.get("channel") or {}).get("name") or "Direct booking"
+                price = float(b.get("price") or 0)
+                adults = int(b.get("adults") or 0)
+                children = int(b.get("children") or 0)
+                guests = adults + children
+                days = max((departure_dt - arrival_dt).days, 0)
+
+                if "expedia" in platform.lower():
+                    price = price / 0.82
+
+                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, apt_name)
+                fee = compute_booking_fee(platform, price)
+                settings = APARTMENT_SETTINGS.get(apt_name, {"airstay_commission": 0.248})
+                airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
+                owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
+
+                all_rows.append({
+                    "ID": b.get("id"),
+                    "Apartment": apt_name,
+                    "Apartment ID": apt_id,          # Νέα στήλη για Apartment ID
+                    "Guest Name": b.get("guestName") or b.get("guest-name"),
+                    "Arrival": arrival_dt.strftime("%Y-%m-%d"),
+                    "Departure": departure_dt.strftime("%Y-%m-%d"),
+                    "Days": days,
+                    "Platform": platform,
+                    "Guests": guests,
+                    "Total Price": round(price,2),
+                    "Booking Fee": round(fee,2),
+                    "Price Without Tax": round(price_wo_tax,2),
+                    "Airstay Commission": round(airstay_commission,2),
+                    "Owner Profit": round(owner_profit,2),
+                    "Month": arrival_dt.month
+                })
+
+            if data.get("page") and data.get("page") < data.get("page_count",1):
+                params["page"] += 1
+            else:
+                break
+
+# Προσθήκη νέων κρατήσεων στο Excel
+if all_rows and UPDATE_FULL_HISTORY:
+    reservations_df = pd.concat([reservations_df, pd.DataFrame(all_rows)], ignore_index=True)
+    reservations_df.drop_duplicates(subset=["ID"], inplace=True)
+    reservations_df.to_excel(RESERVATIONS_FILE, index=False)
+
+# -------------------------------------------------------------
+# Sidebar επιλογής καταλύματος
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_apartment = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-
 
 # -------------------------------------------------------------
 # Ονόματα μηνών για εμφανή labels
