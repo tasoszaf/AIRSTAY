@@ -44,11 +44,11 @@ yesterday = today - timedelta(days=1)
 display_from_date = "2025-01-01"
 display_to_date = yesterday.strftime("%Y-%m-%d")
 
-    if FETCH_MODE == "show_only":
+if FETCH_MODE == "show_only":
         # μόνο τρέχων μήνας, μέχρι χθες
         from_date = date(today.year, today.month, 1).strftime("%Y-%m-%d")
         to_date = yesterday.strftime("%Y-%m-%d")
-    else:
+else:
         # save_and_show → από start_month έως end_month
         from_date = date(today.year, start_month, 1).strftime("%Y-%m-%d")
         next_month = date(today.year, end_month, 28) + timedelta(days=4)
