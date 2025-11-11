@@ -4,8 +4,6 @@ import requests
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
-import base64
-import uuid
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -74,7 +72,7 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
-THRESH_IDS = {1200587, 563634, 563650, 563653}  # τα apartment IDs για τα οποία Price Without Tax = Total Price
+THRESH_IDS = {1200587, 563634, 563650, 563653}  # IDs για τα οποία Price Without Tax = Total Price
 
 # -------------------------------------------------------------
 # Ημερομηνίες
@@ -82,15 +80,11 @@ THRESH_IDS = {1200587, 563634, 563650, 563653}  # τα apartment IDs για τα
 today = date.today()
 yesterday = today - timedelta(days=1)
 
-display_from_date = "2025-01-01"
-display_to_date = yesterday.strftime("%Y-%m-%d")
-
 if UPDATE_FULL_HISTORY:
     from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
-    to_date = yesterday.strftime("%Y-%m-%d")
 else:
     from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
-    to_date = yesterday.strftime("%Y-%m-%d")
+to_date = yesterday.strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
 # Φόρτωση Excel
@@ -99,9 +93,9 @@ try:
     reservations_df = pd.read_excel(RESERVATIONS_FILE)
 except FileNotFoundError:
     reservations_df = pd.DataFrame(columns=[
-        "ID","Apartment_ID","Guest Name","Arrival","Departure","Days",
+        "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days",
         "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year","Group"
+        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year"
     ])
 
 try:
@@ -201,8 +195,8 @@ for group_name, id_list in APARTMENTS.items():
 
                 all_rows.append({
                     "ID": b.get("id"),
-                    "Apartment_ID": b.get("apartment", {}).get("id", apt_id),
                     "Group": group_name,
+                    "Apartment_ID": b.get("apartment", {}).get("id", apt_id),
                     "Guest Name": b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                     "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -296,12 +290,13 @@ st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
+# Εμφάνιση κρατήσεων με όλες τις ζητούμενες στήλες
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(
     filtered_df[[
-        "ID","Apartment_ID","Arrival","Departure","Platform","Total Price","Price Without Tax","Owner Profit"
+        "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days","Platform","Guests",
+        "Total Price","Booking Fee","Price Without Tax","Airstay Commission","Owner Profit","Month"
     ]],
     width="stretch",
     hide_index=True
