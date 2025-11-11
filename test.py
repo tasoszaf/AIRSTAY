@@ -72,41 +72,11 @@ THRESH_SPECIAL_IDS = {563637, 563640, 563643, 1200587}  # IDs για τα οπο
 # Ημερομηνίες
 # -------------------------------------------------------------
 today = date.today()
-first_day_of_month = date(today.year, today.month, 1)
-last_month = first_day_of_month - timedelta(days=1)
+from_date = f"{today.year}-01-01"
+to_date = today.strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
-# Φόρτωση ή δημιουργία Excel
-# -------------------------------------------------------------
-if os.path.exists(RESERVATIONS_FILE):
-    reservations_df = pd.read_excel(RESERVATIONS_FILE)
-    if reservations_df.empty or "Group" not in reservations_df.columns:
-        reservations_df = pd.DataFrame(columns=[
-            "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days",
-            "Platform","Guests","Total Price","Booking Fee","Price Without Tax",
-            "Airstay Commission","Owner Profit"
-        ])
-    first_run = False
-else:
-    reservations_df = pd.DataFrame(columns=[
-        "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days",
-        "Platform","Guests","Total Price","Booking Fee","Price Without Tax",
-        "Airstay Commission","Owner Profit"
-    ])
-    first_run = True
-
-# -------------------------------------------------------------
-# Συνθήκες για κλήση API
-# -------------------------------------------------------------
-if first_run:
-    from_date = f"{today.year}-01-01"
-    to_date = last_month.strftime("%Y-%m-%d")
-else:
-    from_date = first_day_of_month.strftime("%Y-%m-%d")
-    to_date = today.strftime("%Y-%m-%d")
-
-# -------------------------------------------------------------
-# Συναρτήσεις υπολογισμού
+# Συναρτήσεις Υπολογισμού
 # -------------------------------------------------------------
 def compute_price_without_tax(price, nights, month, apt_name, apt_id):
     if not price or not nights:
@@ -132,16 +102,10 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.18
     else:
         rate = 0.00
-    return round((price or 0)*rate, 2)
-
-def parse_amount(v):
-    try:
-        return float(str(v).replace("€","").strip())
-    except:
-        return 0.0
+    return round(price * rate, 2)
 
 # -------------------------------------------------------------
-# Ανάκτηση νέων κρατήσεων από Smoobu
+# Ανάκτηση κρατήσεων από API
 # -------------------------------------------------------------
 all_rows = []
 for group_name, id_list in APARTMENTS.items():
@@ -172,11 +136,15 @@ for group_name, id_list in APARTMENTS.items():
                 departure_str = b.get("departure")
                 if not arrival_str or not departure_str:
                     continue
+
                 try:
                     arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
                     departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
                 except:
                     continue
+
+                if departure_dt.year != today.year:
+                    continue  # Μόνο για το τρέχον έτος
 
                 platform = (b.get("channel") or {}).get("name") or "Direct booking"
                 price = float(b.get("price") or 0)
@@ -185,8 +153,7 @@ for group_name, id_list in APARTMENTS.items():
                 guests = adults + children
                 days = max((departure_dt - arrival_dt).days, 0)
 
-                platform_lower = platform.lower().strip()
-                if "expedia" in platform_lower:
+                if "expedia" in platform.lower():
                     price = price / 0.82
 
                 apt_real_id = b.get("apartment", {}).get("id", apt_id)
@@ -218,90 +185,31 @@ for group_name, id_list in APARTMENTS.items():
             else:
                 break
 
-# Προσθήκη στο Excel μόνο αν πρώτης εκτέλεσης
-if first_run and all_rows:
-    new_df = pd.DataFrame(all_rows)
-    reservations_df = pd.concat([reservations_df, new_df], ignore_index=True)
-    reservations_df.drop_duplicates(subset=["ID"], inplace=True)
-    reservations_df.to_excel(RESERVATIONS_FILE, index=False)
-
 # -------------------------------------------------------------
-# Sidebar επιλογής καταλύματος
+# Streamlit Display
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-display_df = reservations_df[reservations_df.get("Group","")==selected_group].copy()
-display_df = display_df.sort_values(["Arrival"]).reset_index(drop=True)
+df = pd.DataFrame(all_rows)
+display_df = df[df["Group"] == selected_group].copy()
+display_df = display_df.sort_values("Arrival")
 
-# -------------------------------------------------------------
-# Metrics ανά μήνα
-# -------------------------------------------------------------
+# --- Metrics ανά μήνα ---
 months_el = {
     1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
     7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
 }
 
-monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
+monthly = display_df.groupby(display_df["Arrival"].str.slice(5,7).astype(int)).agg({
+    "Total Price":"sum","Owner Profit":"sum"
+}).reset_index()
 
-for idx, row in display_df.iterrows():
-    arrival = pd.to_datetime(row["Arrival"])
-    departure = pd.to_datetime(row["Departure"])
-    total_days = (departure - arrival).days
-    if total_days == 0:
-        continue
-    start_day = max(arrival, pd.Timestamp(today.year,1,2))
-    end_day = min(departure, pd.Timestamp(today.year, today.month, today.day))
-    days_total = (end_day - start_day).days
-    if days_total == 0:
-        continue
+monthly["Μήνας"] = monthly["Arrival"].map(months_el)
+monthly = monthly[monthly["Arrival"] <= today.month]
 
-    price_per_day = row["Total Price"] / total_days
-    owner_profit_per_day = row["Owner Profit"] / total_days
-
-    for i in range(days_total):
-        day = start_day + pd.Timedelta(days=i)
-        key = (day.year, day.month)
-        monthly_metrics[key]["Total Price"] += price_per_day
-        monthly_metrics[key]["Owner Profit"] += owner_profit_per_day
-
-# Προσθήκη εξόδων
-try:
-    expenses_df = pd.read_excel(EXPENSES_FILE)
-except FileNotFoundError:
-    expenses_df = pd.DataFrame(columns=["ID","Date","Month","Year","Accommodation","Category","Amount","Description"])
-
-for (year, month) in list(monthly_metrics.keys()):
-    df_exp_month = expenses_df[
-        (expenses_df["Month"]==month) &
-        (pd.to_datetime(expenses_df["Date"]).dt.year==year) &
-        (expenses_df["Accommodation"].str.upper()==selected_group.upper())
-    ]
-    monthly_metrics[(year, month)]["Total Expenses"] = df_exp_month["Amount"].apply(parse_amount).sum()
-
-monthly_table = pd.DataFrame([
-    {
-        "Έτος": year,
-        "Μήνας": months_el[month],
-        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
-        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
-    }
-    for (year, month), v in sorted(monthly_metrics.items())
-])
-
-st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
-st.dataframe(monthly_table, width="stretch", hide_index=True)
-
-# -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
-# -------------------------------------------------------------
-columns_to_show = [
-    "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days","Platform","Guests",
-    "Total Price","Booking Fee","Price Without Tax","Airstay Commission","Owner Profit"
-]
-existing_columns = [col for col in columns_to_show if col in display_df.columns]
+st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
+st.dataframe(monthly[["Μήνας","Total Price","Owner Profit"]], hide_index=True, width="stretch")
 
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
-st.dataframe(display_df[existing_columns], width="stretch", hide_index=True)
-
+st.dataframe(display_df, hide_index=True, width="stretch")
