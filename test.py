@@ -40,6 +40,8 @@ APARTMENTS = {
     "THRESH": [563628,563631,563637,563640,563643],
     "THRESH_A3": [1200587],
     "THRESH_A4": [563634],
+    "THRESH_A5": [563650],
+    "THRESH_A6": [563653],
     "ZILEAN": [1756004,1756007,1756010,1756013,1756016,1756019,1756022,1756025,1756031],
     "NAUTILUS": [563712,563724,563718,563721,563715,563727],
     "ANIVIA": [563703,563706],
@@ -56,7 +58,9 @@ APARTMENT_SETTINGS = {
     "NAMI": {"winter_base": 4, "summer_base": 15, "airstay_commission": 0},
     "THRESH": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
     "THRESH_A3": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    "THRESH_A4": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
+    "THRESH_A4": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "THRESH_A5": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "THRESH_A6": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
     "KALISTA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
     "KOMOS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
     "CHELI": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
@@ -69,6 +73,8 @@ APARTMENT_SETTINGS = {
     "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0},
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
+
+THRESH_IDS = {1200587, 563634, 563650, 563653}  # τα apartment IDs για τα οποία Price Without Tax = Total Price
 
 # -------------------------------------------------------------
 # Ημερομηνίες
@@ -93,9 +99,9 @@ try:
     reservations_df = pd.read_excel(RESERVATIONS_FILE)
 except FileNotFoundError:
     reservations_df = pd.DataFrame(columns=[
-        "ID","Apartment_ID","Group","Guest Name","Arrival","Departure","Days",
+        "ID","Apartment_ID","Guest Name","Arrival","Departure","Days",
         "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year"
+        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year","Group"
     ])
 
 try:
@@ -106,9 +112,11 @@ except FileNotFoundError:
 # -------------------------------------------------------------
 # Συναρτήσεις υπολογισμού
 # -------------------------------------------------------------
-def compute_price_without_tax(price, nights, month, apt_name):
+def compute_price_without_tax(price, nights, month, apt_name, apt_id):
     if not price or not nights:
         return 0.0
+    if apt_id in THRESH_IDS:
+        return round(price, 2)
     settings = APARTMENT_SETTINGS.get(apt_name, {"winter_base": 2, "summer_base": 8})
     base = settings["winter_base"] if month in [11,12,1,2] else settings["summer_base"]
     adjusted = price - base * nights
@@ -185,7 +193,7 @@ for group_name, id_list in APARTMENTS.items():
                 if "expedia" in platform_lower:
                     price = price / 0.82
 
-                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name)
+                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name, apt_id)
                 fee = compute_booking_fee(platform, price)
                 settings = APARTMENT_SETTINGS.get(group_name, {"airstay_commission": 0.248})
                 airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
@@ -206,7 +214,8 @@ for group_name, id_list in APARTMENTS.items():
                     "Price Without Tax": round(price_wo_tax,2),
                     "Airstay Commission": round(airstay_commission,2),
                     "Owner Profit": round(owner_profit,2),
-                    "Month": arrival_dt.month
+                    "Month": arrival_dt.month,
+                    "Year": arrival_dt.year
                 })
 
             if data.get("page") and data.get("page") < data.get("page_count",1):
@@ -239,7 +248,7 @@ months_el = {
 }
 
 # -------------------------------------------------------------
-# Metrics ανά έτος + μήνα
+# Metrics ανά έτος + μήνα (μόνο για το τρέχον έτος)
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
@@ -247,21 +256,23 @@ for idx, row in filtered_df.iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
     days_total = (departure - arrival).days
-    if days_total == 0:
+    if days_total == 0 or arrival.year != today.year:
         continue
     price_per_day = row["Total Price"] / days_total
     owner_profit_per_day = row["Owner Profit"] / days_total
 
     for i in range(days_total):
         day = arrival + pd.Timedelta(days=i)
-        if day.date() > today:
+        if day.date() > today or day.year != today.year:
             continue
         key = (day.year, day.month)
         monthly_metrics[key]["Total Price"] += price_per_day
         monthly_metrics[key]["Owner Profit"] += owner_profit_per_day
 
-# Προσθήκη εξόδων
-for (year, month) in monthly_metrics.keys():
+# Προσθήκη εξόδων (μόνο για το τρέχον έτος)
+for (year, month) in list(monthly_metrics.keys()):
+    if year != today.year:
+        continue
     df_exp_month = expenses_df[
         (expenses_df["Month"]==month) &
         (pd.to_datetime(expenses_df["Date"]).dt.year==year) &
@@ -278,10 +289,10 @@ monthly_table = pd.DataFrame([
         "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
         "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
     }
-    for (year, month), v in sorted(monthly_metrics.items())
+    for (year, month), v in sorted(monthly_metrics.items()) if year == today.year
 ])
 
-st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
+st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
@@ -290,9 +301,7 @@ st.dataframe(monthly_table, width="stretch", hide_index=True)
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(
     filtered_df[[
-        "ID","Apartment_ID","Group","Arrival","Departure","Days",
-        "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit"
+        "ID","Apartment_ID","Arrival","Departure","Platform","Total Price","Price Without Tax","Owner Profit"
     ]],
     width="stretch",
     hide_index=True
