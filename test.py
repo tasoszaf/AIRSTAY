@@ -73,7 +73,7 @@ THRESH_SPECIAL_IDS = {563637, 563640, 563643, 1200587}  # IDs για τα οπο
 # -------------------------------------------------------------
 today = date.today()
 first_day_of_month = date(today.year, today.month, 1)
-last_month = first_day_of_month - timedelta(days=1)  # τελευταία μέρα προηγούμενου μήνα
+last_month = first_day_of_month - timedelta(days=1)
 
 # -------------------------------------------------------------
 # Φόρτωση ή δημιουργία Excel
@@ -94,9 +94,9 @@ else:
 # -------------------------------------------------------------
 if first_run:
     from_date = f"{today.year}-01-01"
-    to_date = last_month.strftime("%Y-%m-%d")  # μέχρι προηγούμενο μήνα
+    to_date = last_month.strftime("%Y-%m-%d")
 else:
-    from_date = first_day_of_month.strftime("%Y-%m-%d")  # μόνο τρέχον μήνας
+    from_date = first_day_of_month.strftime("%Y-%m-%d")
     to_date = today.strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
@@ -213,7 +213,7 @@ for group_name, id_list in APARTMENTS.items():
             else:
                 break
 
-# Προσθήκη στο Excel (μόνο αν πρώτης εκτέλεσης ή παλιές κρατήσεις)
+# Προσθήκη στο Excel μόνο αν πρώτης εκτέλεσης
 if first_run and all_rows:
     new_df = pd.DataFrame(all_rows)
     reservations_df = pd.concat([reservations_df, new_df], ignore_index=True)
@@ -226,16 +226,11 @@ if first_run and all_rows:
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-# Φιλτράρισμα για εμφάνιση: Excel + τρέχον μήνας API
-display_df = reservations_df[
-    (reservations_df["Group"]==selected_group)
-].copy()
-display_df = pd.DataFrame(display_df)  # αν υπάρχουν τρέχοντα bookings από API, κάνε append εδώ
-
+display_df = reservations_df[reservations_df["Group"]==selected_group].copy()
 display_df = display_df.sort_values(["Arrival"]).reset_index(drop=True)
 
 # -------------------------------------------------------------
-# Metrics ανά μήνα (τρέχον έτος, μέχρι τρέχον μήνα)
+# Metrics ανά μήνα
 # -------------------------------------------------------------
 months_el = {
     1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
@@ -294,14 +289,16 @@ st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
+# Εμφάνιση κρατήσεων (ασφαλής επιλογή columns για KeyError)
 # -------------------------------------------------------------
+columns_to_show = [
+    "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days","Platform","Guests",
+    "Total Price","Booking Fee","Price Without Tax","Airstay Commission","Owner Profit"
+]
+existing_columns = [col for col in columns_to_show if col in display_df.columns]
+
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
-st.dataframe(
-    display_df[[
-        "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days","Platform","Guests",
-        "Total Price","Booking Fee","Price Without Tax","Airstay Commission","Owner Profit"
-    ]],
-    width="stretch",
-    hide_index=True
-)
+st.dataframe(display_df[existing_columns], width="stretch", hide_index=True)
+
+
+
