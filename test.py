@@ -93,9 +93,9 @@ try:
     reservations_df = pd.read_excel(RESERVATIONS_FILE)
 except FileNotFoundError:
     reservations_df = pd.DataFrame(columns=[
-        "ID","Apartment","Guest Name","Arrival","Departure","Days",
+        "ID","Apartment_ID","Group","Guest Name","Arrival","Departure","Days",
         "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year","Apartment_ID","Group"
+        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year"
     ])
 
 try:
@@ -193,7 +193,7 @@ for group_name, id_list in APARTMENTS.items():
 
                 all_rows.append({
                     "ID": b.get("id"),
-                    "Apartment": b.get("apartment", {}).get("name",""),
+                    "Apartment_ID": b.get("apartment", {}).get("id", apt_id),
                     "Group": group_name,
                     "Guest Name": b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
@@ -288,4 +288,12 @@ st.dataframe(monthly_table, width="stretch", hide_index=True)
 # Εμφάνιση κρατήσεων
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
-st.dataframe(filtered_df, width="stretch", hide_index=True)
+st.dataframe(
+    filtered_df[[
+        "ID","Apartment_ID","Group","Arrival","Departure","Days",
+        "Platform","Guests","Total Price","Booking Fee",
+        "Price Without Tax","Airstay Commission","Owner Profit"
+    ]],
+    width="stretch",
+    hide_index=True
+)
