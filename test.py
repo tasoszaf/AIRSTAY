@@ -258,11 +258,11 @@ for idx, row in filtered_df.iterrows():
     if total_days == 0:
         continue
 
-    # Περιορισμός μόνο για ημέρες εντός 2025 και από 2 Ιανουαρίου
-    start_day = max(arrival, date(today.year, 1, 2))
-    end_day = min(departure, date(today.year, 12, 31))
-    days_total = (end_day - start_day).days
-    if days_total == 0:
+   # Περιορισμός μόνο για ημέρες εντός 2025 και από 2 Ιανουαρίου
+   start_day = max(arrival, pd.Timestamp(today.year, 1, 2))
+   end_day = min(departure, pd.Timestamp(today.year, 12, 31))
+   days_total = (end_day - start_day).days
+   if days_total == 0:
         continue
 
     price_per_day = row["Total Price"] / total_days
