@@ -44,10 +44,6 @@ yesterday = today - timedelta(days=1)
 display_from_date = "2025-01-01"
 display_to_date = yesterday.strftime("%Y-%m-%d")
 
-if UPDATE_FULL_HISTORY:
-    from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
-    to_date = yesterday.strftime("%Y-%m-%d")
-else:
     if FETCH_MODE == "show_only":
         # μόνο τρέχων μήνας, μέχρι χθες
         from_date = date(today.year, today.month, 1).strftime("%Y-%m-%d")
