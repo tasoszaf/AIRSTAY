@@ -256,7 +256,7 @@ for idx, row in filtered_df.iterrows():
 
     for i in range(days_total):
         day = arrival + pd.Timedelta(days=i)
-        if day > today:
+        if day.date() > today:
             continue
         key = (day.year, day.month)
         monthly_metrics[key]["Total Price"] += price_per_day
