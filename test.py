@@ -4,6 +4,8 @@ import requests
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
+import base64
+import uuid
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -21,6 +23,8 @@ reservations_url = "https://login.smoobu.com/api/reservations"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
+
+UPDATE_FULL_HISTORY = False  # True φέρνει όλες τις κρατήσεις από 1/1
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
@@ -66,23 +70,45 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
-THRESH_SPECIAL_IDS = {563637, 563640, 563643, 1200587}  # IDs για τα οποία Price Without Tax = Total Price
-
 # -------------------------------------------------------------
 # Ημερομηνίες
 # -------------------------------------------------------------
 today = date.today()
-from_date = f"{today.year}-01-01"
-to_date = today.strftime("%Y-%m-%d")
+yesterday = today - timedelta(days=1)
+
+display_from_date = "2025-01-01"
+display_to_date = yesterday.strftime("%Y-%m-%d")
+
+if UPDATE_FULL_HISTORY:
+    from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
+    to_date = yesterday.strftime("%Y-%m-%d")
+else:
+    from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
+    to_date = yesterday.strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
-# Συναρτήσεις Υπολογισμού
+# Φόρτωση Excel
 # -------------------------------------------------------------
-def compute_price_without_tax(price, nights, month, apt_name, apt_id):
+try:
+    reservations_df = pd.read_excel(RESERVATIONS_FILE)
+except FileNotFoundError:
+    reservations_df = pd.DataFrame(columns=[
+        "ID","Apartment_ID","Group","Guest Name","Arrival","Departure","Days",
+        "Platform","Guests","Total Price","Booking Fee",
+        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year"
+    ])
+
+try:
+    expenses_df = pd.read_excel(EXPENSES_FILE)
+except FileNotFoundError:
+    expenses_df = pd.DataFrame(columns=["ID","Date","Month","Year","Accommodation","Category","Amount","Description"])
+
+# -------------------------------------------------------------
+# Συναρτήσεις υπολογισμού
+# -------------------------------------------------------------
+def compute_price_without_tax(price, nights, month, apt_name):
     if not price or not nights:
         return 0.0
-    if apt_id in THRESH_SPECIAL_IDS:
-        return round(price, 2)
     settings = APARTMENT_SETTINGS.get(apt_name, {"winter_base": 2, "summer_base": 8})
     base = settings["winter_base"] if month in [11,12,1,2] else settings["summer_base"]
     adjusted = price - base * nights
@@ -102,10 +128,16 @@ def compute_booking_fee(platform_name: str, price: float) -> float:
         rate = 0.18
     else:
         rate = 0.00
-    return round(price * rate, 2)
+    return round((price or 0)*rate, 2)
+
+def parse_amount(v):
+    try:
+        return float(str(v).replace("€","").strip())
+    except:
+        return 0.0
 
 # -------------------------------------------------------------
-# Ανάκτηση κρατήσεων από API
+# Ανάκτηση νέων κρατήσεων από Smoobu
 # -------------------------------------------------------------
 all_rows = []
 for group_name, id_list in APARTMENTS.items():
@@ -136,15 +168,11 @@ for group_name, id_list in APARTMENTS.items():
                 departure_str = b.get("departure")
                 if not arrival_str or not departure_str:
                     continue
-
                 try:
                     arrival_dt = datetime.strptime(arrival_str, "%Y-%m-%d")
                     departure_dt = datetime.strptime(departure_str, "%Y-%m-%d")
                 except:
                     continue
-
-                if departure_dt.year != today.year:
-                    continue  # Μόνο για το τρέχον έτος
 
                 platform = (b.get("channel") or {}).get("name") or "Direct booking"
                 price = float(b.get("price") or 0)
@@ -153,11 +181,11 @@ for group_name, id_list in APARTMENTS.items():
                 guests = adults + children
                 days = max((departure_dt - arrival_dt).days, 0)
 
-                if "expedia" in platform.lower():
+                platform_lower = platform.lower().strip()
+                if "expedia" in platform_lower:
                     price = price / 0.82
 
-                apt_real_id = b.get("apartment", {}).get("id", apt_id)
-                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name, apt_real_id)
+                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name)
                 fee = compute_booking_fee(platform, price)
                 settings = APARTMENT_SETTINGS.get(group_name, {"airstay_commission": 0.248})
                 airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
@@ -165,8 +193,8 @@ for group_name, id_list in APARTMENTS.items():
 
                 all_rows.append({
                     "ID": b.get("id"),
+                    "Apartment_ID": b.get("apartment", {}).get("id", apt_id),
                     "Group": group_name,
-                    "Apartment_ID": apt_real_id,
                     "Guest Name": b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                     "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -177,7 +205,8 @@ for group_name, id_list in APARTMENTS.items():
                     "Booking Fee": round(fee,2),
                     "Price Without Tax": round(price_wo_tax,2),
                     "Airstay Commission": round(airstay_commission,2),
-                    "Owner Profit": round(owner_profit,2)
+                    "Owner Profit": round(owner_profit,2),
+                    "Month": arrival_dt.month
                 })
 
             if data.get("page") and data.get("page") < data.get("page_count",1):
@@ -185,31 +214,86 @@ for group_name, id_list in APARTMENTS.items():
             else:
                 break
 
+# Προσθήκη στο Excel
+if all_rows:
+    new_df = pd.DataFrame(all_rows)
+    reservations_df = pd.concat([reservations_df, new_df], ignore_index=True)
+    reservations_df.drop_duplicates(subset=["ID"], inplace=True)
+    reservations_df.to_excel(RESERVATIONS_FILE, index=False)
+
 # -------------------------------------------------------------
-# Streamlit Display
+# Sidebar επιλογής καταλύματος
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-df = pd.DataFrame(all_rows)
-display_df = df[df["Group"] == selected_group].copy()
-display_df = display_df.sort_values("Arrival")
+filtered_df = reservations_df[reservations_df["Group"]==selected_group].copy()
+filtered_df = filtered_df.sort_values(["Arrival"]).reset_index(drop=True)
 
-# --- Metrics ανά μήνα ---
+# -------------------------------------------------------------
+# Ονόματα μηνών για εμφανή labels
+# -------------------------------------------------------------
 months_el = {
     1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
     7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
 }
 
-monthly = display_df.groupby(display_df["Arrival"].str.slice(5,7).astype(int)).agg({
-    "Total Price":"sum","Owner Profit":"sum"
-}).reset_index()
+# -------------------------------------------------------------
+# Metrics ανά έτος + μήνα
+# -------------------------------------------------------------
+monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
-monthly["Μήνας"] = monthly["Arrival"].map(months_el)
-monthly = monthly[monthly["Arrival"] <= today.month]
+for idx, row in filtered_df.iterrows():
+    arrival = pd.to_datetime(row["Arrival"])
+    departure = pd.to_datetime(row["Departure"])
+    days_total = (departure - arrival).days
+    if days_total == 0:
+        continue
+    price_per_day = row["Total Price"] / days_total
+    owner_profit_per_day = row["Owner Profit"] / days_total
 
-st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
-st.dataframe(monthly[["Μήνας","Total Price","Owner Profit"]], hide_index=True, width="stretch")
+    for i in range(days_total):
+        day = arrival + pd.Timedelta(days=i)
+        if day.date() > today:
+            continue
+        key = (day.year, day.month)
+        monthly_metrics[key]["Total Price"] += price_per_day
+        monthly_metrics[key]["Owner Profit"] += owner_profit_per_day
 
+# Προσθήκη εξόδων
+for (year, month) in monthly_metrics.keys():
+    df_exp_month = expenses_df[
+        (expenses_df["Month"]==month) &
+        (pd.to_datetime(expenses_df["Date"]).dt.year==year) &
+        (expenses_df["Accommodation"].str.upper()==selected_group.upper())
+    ]
+    monthly_metrics[(year, month)]["Total Expenses"] = df_exp_month["Amount"].apply(parse_amount).sum()
+
+# DataFrame για εμφάνιση
+monthly_table = pd.DataFrame([
+    {
+        "Έτος": year,
+        "Μήνας": months_el[month],
+        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
+        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
+    }
+    for (year, month), v in sorted(monthly_metrics.items())
+])
+
+st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
+st.dataframe(monthly_table, width="stretch", hide_index=True)
+
+# -------------------------------------------------------------
+# Εμφάνιση κρατήσεων
+# -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
-st.dataframe(display_df, hide_index=True, width="stretch")
+st.dataframe(
+    filtered_df[[
+        "ID","Apartment_ID","Group","Arrival","Departure","Days",
+        "Platform","Guests","Total Price","Booking Fee",
+        "Price Without Tax","Airstay Commission","Owner Profit"
+    ]],
+    width="stretch",
+    hide_index=True
+)
