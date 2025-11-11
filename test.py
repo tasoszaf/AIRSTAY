@@ -22,8 +22,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
-UPDATE_FULL_HISTORY = True  # True φέρνει όλες τις κρατήσεις από 1/1
-
 # -------------------------------------------------------------
 # Καταλύματα & Settings
 # -------------------------------------------------------------
@@ -74,30 +72,32 @@ THRESH_IDS = {1200587, 563634, 563650, 563653}  # IDs για τα οποία Pri
 # Ημερομηνίες
 # -------------------------------------------------------------
 today = date.today()
-yesterday = today - timedelta(days=1)
-
-if UPDATE_FULL_HISTORY:
-    from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
-else:
-    from_date = date(today.year, 1, 1).strftime("%Y-%m-%d")
-to_date = yesterday.strftime("%Y-%m-%d")
+first_day_of_month = date(today.year, today.month, 1)
+last_month = first_day_of_month - timedelta(days=1)  # τελευταία μέρα προηγούμενου μήνα
 
 # -------------------------------------------------------------
-# Φόρτωση Excel
+# Φόρτωση ή δημιουργία Excel
 # -------------------------------------------------------------
-try:
+if os.path.exists(RESERVATIONS_FILE):
     reservations_df = pd.read_excel(RESERVATIONS_FILE)
-except FileNotFoundError:
+    first_run = False
+else:
     reservations_df = pd.DataFrame(columns=[
         "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days",
-        "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit","Year"
+        "Platform","Guests","Total Price","Booking Fee","Price Without Tax","Airstay Commission",
+        "Owner Profit","Year"
     ])
+    first_run = True
 
-try:
-    expenses_df = pd.read_excel(EXPENSES_FILE)
-except FileNotFoundError:
-    expenses_df = pd.DataFrame(columns=["ID","Date","Month","Year","Accommodation","Category","Amount","Description"])
+# -------------------------------------------------------------
+# Συνθήκες για κλήση API
+# -------------------------------------------------------------
+if first_run:
+    from_date = f"{today.year}-01-01"
+    to_date = last_month.strftime("%Y-%m-%d")  # μέχρι προηγούμενο μήνα
+else:
+    from_date = first_day_of_month.strftime("%Y-%m-%d")  # μόνο τρέχον μήνας
+    to_date = today.strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
 # Συναρτήσεις υπολογισμού
@@ -105,7 +105,7 @@ except FileNotFoundError:
 def compute_price_without_tax(price, nights, month, apt_name, apt_id):
     if not price or not nights:
         return 0.0
-    if apt_id in THRESH_IDS:
+    if apt_id in THRESH_SPECIAL_IDS:
         return round(price, 2)
     settings = APARTMENT_SETTINGS.get(apt_name, {"winter_base": 2, "summer_base": 8})
     base = settings["winter_base"] if month in [11,12,1,2] else settings["summer_base"]
@@ -213,8 +213,8 @@ for group_name, id_list in APARTMENTS.items():
             else:
                 break
 
-# Προσθήκη στο Excel
-if all_rows:
+# Προσθήκη στο Excel (μόνο αν πρώτης εκτέλεσης ή παλιές κρατήσεις)
+if first_run and all_rows:
     new_df = pd.DataFrame(all_rows)
     reservations_df = pd.concat([reservations_df, new_df], ignore_index=True)
     reservations_df.drop_duplicates(subset=["ID"], inplace=True)
@@ -226,36 +226,31 @@ if all_rows:
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-# Φιλτράρουμε για κρατήσεις με checkout στο 2025 από 2 Ιανουαρίου και μετά
-filtered_df = reservations_df[
-    (reservations_df["Group"]==selected_group) &
-    (pd.to_datetime(reservations_df["Departure"]) >= pd.Timestamp(today.year,1,2)) &
-    (pd.to_datetime(reservations_df["Departure"]).dt.year == today.year)
+# Φιλτράρισμα για εμφάνιση: Excel + τρέχον μήνας API
+display_df = reservations_df[
+    (reservations_df["Group"]==selected_group)
 ].copy()
-filtered_df = filtered_df.sort_values(["Arrival"]).reset_index(drop=True)
+display_df = pd.DataFrame(display_df)  # αν υπάρχουν τρέχοντα bookings από API, κάνε append εδώ
+
+display_df = display_df.sort_values(["Arrival"]).reset_index(drop=True)
 
 # -------------------------------------------------------------
-# Ονόματα μηνών για εμφανή labels
+# Metrics ανά μήνα (τρέχον έτος, μέχρι τρέχον μήνα)
 # -------------------------------------------------------------
 months_el = {
     1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
     7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
 }
 
-# -------------------------------------------------------------
-# Metrics ανά μήνα (μόνο για το τρέχον έτος, μέχρι τρέχον μήνα)
-# -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
-for idx, row in filtered_df.iterrows():
+for idx, row in display_df.iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
     total_days = (departure - arrival).days
     if total_days == 0:
         continue
-
-    # Περιορισμός μόνο για ημέρες από 2 Ιανουαρίου 2025 μέχρι σήμερα
-    start_day = max(arrival, pd.Timestamp(today.year, 1, 2))
+    start_day = max(arrival, pd.Timestamp(today.year,1,2))
     end_day = min(departure, pd.Timestamp(today.year, today.month, today.day))
     days_total = (end_day - start_day).days
     if days_total == 0:
@@ -270,7 +265,12 @@ for idx, row in filtered_df.iterrows():
         monthly_metrics[key]["Total Price"] += price_per_day
         monthly_metrics[key]["Owner Profit"] += owner_profit_per_day
 
-# Προσθήκη εξόδων (μόνο για το τρέχον έτος)
+# Προσθήκη εξόδων
+try:
+    expenses_df = pd.read_excel(EXPENSES_FILE)
+except FileNotFoundError:
+    expenses_df = pd.DataFrame(columns=["ID","Date","Month","Year","Accommodation","Category","Amount","Description"])
+
 for (year, month) in list(monthly_metrics.keys()):
     df_exp_month = expenses_df[
         (expenses_df["Month"]==month) &
@@ -279,7 +279,6 @@ for (year, month) in list(monthly_metrics.keys()):
     ]
     monthly_metrics[(year, month)]["Total Expenses"] = df_exp_month["Amount"].apply(parse_amount).sum()
 
-# DataFrame για metrics
 monthly_table = pd.DataFrame([
     {
         "Έτος": year,
@@ -295,11 +294,11 @@ st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Εμφάνιση κρατήσεων χωρίς τη στήλη Month
+# Εμφάνιση κρατήσεων
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(
-    filtered_df[[
+    display_df[[
         "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days","Platform","Guests",
         "Total Price","Booking Fee","Price Without Tax","Airstay Commission","Owner Profit"
     ]],
