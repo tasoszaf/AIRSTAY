@@ -4,8 +4,6 @@ import requests
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
-import base64
-import uuid
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -41,20 +39,15 @@ end_month = 10    # έως
 today = date.today()
 yesterday = today - timedelta(days=1)
 
-display_from_date = "2025-01-01"
-display_to_date = yesterday.strftime("%Y-%m-%d")
-
 if FETCH_MODE == "show_only":
-        # μόνο τρέχων μήνας, μέχρι χθες
-        from_date = date(today.year, today.month, 1).strftime("%Y-%m-%d")
-        to_date = yesterday.strftime("%Y-%m-%d")
+    from_date = date(today.year, today.month, 1).strftime("%Y-%m-%d")
+    to_date = yesterday.strftime("%Y-%m-%d")
 else:
-        # save_and_show → από start_month έως end_month
-        from_date = date(today.year, start_month, 1).strftime("%Y-%m-%d")
-        next_month = date(today.year, end_month, 28) + timedelta(days=4)
-        last_day = (next_month - timedelta(days=next_month.day)).day
-        to_date = date(today.year, end_month, last_day).strftime("%Y-%m-%d")
-
+    from_date = date(today.year, start_month, 1).strftime("%Y-%m-%d")
+    next_month = date(today.year, end_month, 28) + timedelta(days=4)
+    last_day = (next_month - timedelta(days=next_month.day)).day
+    to_date = date(today.year, end_month, last_day).strftime("%Y-%m-%d")
+        
 # -------------------------------------------------------------
 # Καταλύματα & Settings
 # -------------------------------------------------------------
@@ -98,7 +91,6 @@ APARTMENT_SETTINGS = {
     "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0},
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
-
 # -------------------------------------------------------------
 # Φόρτωση Excel
 # -------------------------------------------------------------
@@ -154,6 +146,10 @@ def parse_amount(v):
 # -------------------------------------------------------------
 def fetch_reservations(from_date, to_date):
     rows = []
+
+    # IDs για τα THRESH_A3–A6
+    THRESH_IDS = {1200587, 563634, 563637, 563640}
+
     for group_name, id_list in APARTMENTS.items():
         for apt_id in id_list:
             params = {
@@ -188,7 +184,7 @@ def fetch_reservations(from_date, to_date):
                     except:
                         continue
 
-                    # φιλτράρουμε checkout < 2/1/2025
+                    # μόνο checkout >= 2/1/2025
                     if departure_dt < datetime(2025, 1, 2):
                         continue
 
@@ -203,7 +199,12 @@ def fetch_reservations(from_date, to_date):
                     if "expedia" in platform_lower:
                         price = price / 0.82
 
-                    price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name)
+                    apt_real_id = b.get("apartment", {}).get("id", apt_id)
+                    if apt_real_id in THRESH_IDS:
+                        price_wo_tax = round(price, 2)
+                    else:
+                        price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name)
+
                     fee = compute_booking_fee(platform, price)
                     settings = APARTMENT_SETTINGS.get(group_name, {"airstay_commission": 0.248})
                     airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
@@ -211,7 +212,7 @@ def fetch_reservations(from_date, to_date):
 
                     rows.append({
                         "ID": b.get("id"),
-                        "Apartment_ID": b.get("apartment", {}).get("id", apt_id),
+                        "Apartment_ID": apt_real_id,
                         "Group": group_name,
                         "Guest Name": b.get("guest-name"),
                         "Arrival": arrival_dt.strftime("%Y-%m-%d"),
