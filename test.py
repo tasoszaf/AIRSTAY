@@ -66,7 +66,7 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
 
-THRESH_IDS = {1200587, 563634, 563650, 563653}  # IDs για τα οποία Price Without Tax = Total Price
+THRESH_SPECIAL_IDS = {563637, 563640, 563643, 1200587}  # IDs για τα οποία Price Without Tax = Total Price
 
 # -------------------------------------------------------------
 # Ημερομηνίες
