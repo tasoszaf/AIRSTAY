@@ -195,7 +195,6 @@ for group_name, id_list in APARTMENTS.items():
                     "ID": b.get("id"),
                     "Apartment": b.get("apartment", {}).get("name",""),
                     "Group": group_name,
-                    "Apartment_ID": apt_id,
                     "Guest Name": b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                     "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -207,8 +206,7 @@ for group_name, id_list in APARTMENTS.items():
                     "Price Without Tax": round(price_wo_tax,2),
                     "Airstay Commission": round(airstay_commission,2),
                     "Owner Profit": round(owner_profit,2),
-                    "Month": arrival_dt.month,
-                    "Year": arrival_dt.year
+                    "Month": arrival_dt.month
                 })
 
             if data.get("page") and data.get("page") < data.get("page_count",1):
