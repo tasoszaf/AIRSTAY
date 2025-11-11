@@ -95,7 +95,7 @@ except FileNotFoundError:
     reservations_df = pd.DataFrame(columns=[
         "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days",
         "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year"
+        "Price Without Tax","Airstay Commission","Owner Profit","Year"
     ])
 
 try:
@@ -187,7 +187,8 @@ for group_name, id_list in APARTMENTS.items():
                 if "expedia" in platform_lower:
                     price = price / 0.82
 
-                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name, b.get("apartment", {}).get("id", apt_id))
+                apt_real_id = b.get("apartment", {}).get("id", apt_id)
+                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name, apt_real_id)
                 fee = compute_booking_fee(platform, price)
                 settings = APARTMENT_SETTINGS.get(group_name, {"airstay_commission": 0.248})
                 airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
@@ -196,7 +197,7 @@ for group_name, id_list in APARTMENTS.items():
                 all_rows.append({
                     "ID": b.get("id"),
                     "Group": group_name,
-                    "Apartment_ID": b.get("apartment", {}).get("id", apt_id),
+                    "Apartment_ID": apt_real_id,
                     "Guest Name": b.get("guest-name"),
                     "Arrival": arrival_dt.strftime("%Y-%m-%d"),
                     "Departure": departure_dt.strftime("%Y-%m-%d"),
@@ -208,7 +209,6 @@ for group_name, id_list in APARTMENTS.items():
                     "Price Without Tax": round(price_wo_tax,2),
                     "Airstay Commission": round(airstay_commission,2),
                     "Owner Profit": round(owner_profit,2),
-                    "Month": arrival_dt.month,
                     "Year": arrival_dt.year
                 })
 
@@ -247,7 +247,7 @@ months_el = {
 }
 
 # -------------------------------------------------------------
-# Metrics ανά μήνα (μόνο για το τρέχον έτος, από 2 Ιανουαρίου)
+# Metrics ανά μήνα (μόνο για το τρέχον έτος, μέχρι τρέχον μήνα)
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
@@ -258,9 +258,9 @@ for idx, row in filtered_df.iterrows():
     if total_days == 0:
         continue
 
-    # Περιορισμός μόνο για ημέρες εντός 2025 και από 2 Ιανουαρίου
+    # Περιορισμός μόνο για ημέρες από 2 Ιανουαρίου 2025 μέχρι σήμερα
     start_day = max(arrival, pd.Timestamp(today.year, 1, 2))
-    end_day = min(departure, pd.Timestamp(today.year, 12, 31))
+    end_day = min(departure, pd.Timestamp(today.year, today.month, today.day))
     days_total = (end_day - start_day).days
     if days_total == 0:
         continue
@@ -299,13 +299,13 @@ st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Εμφάνιση κρατήσεων με όλες τις στήλες
+# Εμφάνιση κρατήσεων χωρίς τη στήλη Month
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(
     filtered_df[[
         "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days","Platform","Guests",
-        "Total Price","Booking Fee","Price Without Tax","Airstay Commission","Owner Profit","Month"
+        "Total Price","Booking Fee","Price Without Tax","Airstay Commission","Owner Profit"
     ]],
     width="stretch",
     hide_index=True
