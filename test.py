@@ -80,12 +80,18 @@ last_month = first_day_of_month - timedelta(days=1)
 # -------------------------------------------------------------
 if os.path.exists(RESERVATIONS_FILE):
     reservations_df = pd.read_excel(RESERVATIONS_FILE)
+    if reservations_df.empty or "Group" not in reservations_df.columns:
+        reservations_df = pd.DataFrame(columns=[
+            "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days",
+            "Platform","Guests","Total Price","Booking Fee","Price Without Tax",
+            "Airstay Commission","Owner Profit"
+        ])
     first_run = False
 else:
     reservations_df = pd.DataFrame(columns=[
         "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days",
-        "Platform","Guests","Total Price","Booking Fee","Price Without Tax","Airstay Commission",
-        "Owner Profit","Year"
+        "Platform","Guests","Total Price","Booking Fee","Price Without Tax",
+        "Airstay Commission","Owner Profit"
     ])
     first_run = True
 
@@ -204,8 +210,7 @@ for group_name, id_list in APARTMENTS.items():
                     "Booking Fee": round(fee,2),
                     "Price Without Tax": round(price_wo_tax,2),
                     "Airstay Commission": round(airstay_commission,2),
-                    "Owner Profit": round(owner_profit,2),
-                    "Year": arrival_dt.year
+                    "Owner Profit": round(owner_profit,2)
                 })
 
             if data.get("page") and data.get("page") < data.get("page_count",1):
@@ -226,7 +231,7 @@ if first_run and all_rows:
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-display_df = reservations_df[reservations_df["Group"]==selected_group].copy()
+display_df = reservations_df[reservations_df.get("Group","")==selected_group].copy()
 display_df = display_df.sort_values(["Arrival"]).reset_index(drop=True)
 
 # -------------------------------------------------------------
@@ -285,11 +290,11 @@ monthly_table = pd.DataFrame([
     for (year, month), v in sorted(monthly_metrics.items())
 ])
 
-st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
+st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Εμφάνιση κρατήσεων (ασφαλής επιλογή columns για KeyError)
+# Εμφάνιση κρατήσεων
 # -------------------------------------------------------------
 columns_to_show = [
     "ID","Group","Apartment_ID","Guest Name","Arrival","Departure","Days","Platform","Guests",
@@ -299,6 +304,4 @@ existing_columns = [col for col in columns_to_show if col in display_df.columns]
 
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(display_df[existing_columns], width="stretch", hide_index=True)
-
-
 
