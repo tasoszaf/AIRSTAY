@@ -187,7 +187,7 @@ for group_name, id_list in APARTMENTS.items():
                 if "expedia" in platform_lower:
                     price = price / 0.82
 
-                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name, apt_id)
+                price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name, b.get("apartment", {}).get("id", apt_id))
                 fee = compute_booking_fee(platform, price)
                 settings = APARTMENT_SETTINGS.get(group_name, {"airstay_commission": 0.248})
                 airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
@@ -230,7 +230,12 @@ if all_rows:
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-filtered_df = reservations_df[reservations_df["Group"]==selected_group].copy()
+# Φιλτράρουμε για κρατήσεις με checkout στο 2025 από 2 Ιανουαρίου και μετά
+filtered_df = reservations_df[
+    (reservations_df["Group"]==selected_group) &
+    (pd.to_datetime(reservations_df["Departure"]) >= pd.Timestamp(today.year,1,2)) &
+    (pd.to_datetime(reservations_df["Departure"]).dt.year == today.year)
+].copy()
 filtered_df = filtered_df.sort_values(["Arrival"]).reset_index(drop=True)
 
 # -------------------------------------------------------------
@@ -242,31 +247,35 @@ months_el = {
 }
 
 # -------------------------------------------------------------
-# Metrics ανά έτος + μήνα (μόνο για το τρέχον έτος)
+# Metrics ανά μήνα (μόνο για το τρέχον έτος, από 2 Ιανουαρίου)
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
 for idx, row in filtered_df.iterrows():
     arrival = pd.to_datetime(row["Arrival"])
     departure = pd.to_datetime(row["Departure"])
-    days_total = (departure - arrival).days
-    if days_total == 0 or arrival.year != today.year:
+    total_days = (departure - arrival).days
+    if total_days == 0:
         continue
-    price_per_day = row["Total Price"] / days_total
-    owner_profit_per_day = row["Owner Profit"] / days_total
+
+    # Περιορισμός μόνο για ημέρες εντός 2025 και από 2 Ιανουαρίου
+    start_day = max(arrival, date(today.year, 1, 2))
+    end_day = min(departure, date(today.year, 12, 31))
+    days_total = (end_day - start_day).days
+    if days_total == 0:
+        continue
+
+    price_per_day = row["Total Price"] / total_days
+    owner_profit_per_day = row["Owner Profit"] / total_days
 
     for i in range(days_total):
-        day = arrival + pd.Timedelta(days=i)
-        if day.date() > today or day.year != today.year:
-            continue
+        day = start_day + pd.Timedelta(days=i)
         key = (day.year, day.month)
         monthly_metrics[key]["Total Price"] += price_per_day
         monthly_metrics[key]["Owner Profit"] += owner_profit_per_day
 
 # Προσθήκη εξόδων (μόνο για το τρέχον έτος)
 for (year, month) in list(monthly_metrics.keys()):
-    if year != today.year:
-        continue
     df_exp_month = expenses_df[
         (expenses_df["Month"]==month) &
         (pd.to_datetime(expenses_df["Date"]).dt.year==year) &
@@ -274,7 +283,7 @@ for (year, month) in list(monthly_metrics.keys()):
     ]
     monthly_metrics[(year, month)]["Total Expenses"] = df_exp_month["Amount"].apply(parse_amount).sum()
 
-# DataFrame για εμφάνιση
+# DataFrame για metrics
 monthly_table = pd.DataFrame([
     {
         "Έτος": year,
@@ -283,14 +292,14 @@ monthly_table = pd.DataFrame([
         "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
         "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
     }
-    for (year, month), v in sorted(monthly_metrics.items()) if year == today.year
+    for (year, month), v in sorted(monthly_metrics.items())
 ])
 
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group}) - {today.year}")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Εμφάνιση κρατήσεων με όλες τις ζητούμενες στήλες
+# Εμφάνιση κρατήσεων με όλες τις στήλες
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(
