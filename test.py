@@ -337,7 +337,6 @@ group_expenses = expenses_df[expenses_df["Accommodation"].str.upper() == selecte
 group_expenses = group_expenses.sort_values(["Year","Month"], ascending=[False,False]).reset_index(drop=True)
 
 st.subheader(f"💰 Έξοδα για {selected_group}")
-
 if group_expenses.empty:
     st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
 else:
@@ -351,7 +350,6 @@ else:
 # ➕ Φόρμα προσθήκης νέου εξόδου (χωρίς Date)
 # -------------------------------------------------------------
 st.subheader("➕ Προσθήκη νέου εξόδου")
-
 with st.form("add_expense_form"):
     exp_month = st.selectbox("Μήνας", list(range(1, 13)), index=today.month - 1, key="exp_month_select")
     exp_category = st.text_input("Κατηγορία", key="exp_category_input")
@@ -370,7 +368,6 @@ with st.form("add_expense_form"):
             "Amount": exp_amount,
             "Description": exp_description
         }])
-
         expenses_df = pd.concat([expenses_df, new_expense], ignore_index=True)
         expenses_df.to_excel(EXPENSES_FILE, index=False)
         st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς.")
@@ -385,25 +382,34 @@ with st.form("add_expense_form"):
         st.experimental_rerun()
 
 # -------------------------------------------------------------
-# Metrics ανά μήνα (κρατήσεις)
+# Metrics ανά μήνα (κρατήσεις + αθροιστικά έξοδα)
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Owner Profit":0, "Total Expenses":0})
 
+# Προσθήκη κρατήσεων
 for idx, row in filtered_df.iterrows():
     key = (row["Year"], row["Month"])
     monthly_metrics[key]["Total Price"] += row["Total Price"]
     monthly_metrics[key]["Owner Profit"] += row["Owner Profit"]
 
-# -------------------------------------------------------------
-# Προσθήκη εξόδων στα metrics (χωρίς Date)
-# -------------------------------------------------------------
+# Προσθήκη εξόδων αθροιστικά
 for idx, row in expenses_df.iterrows():
     if row["Accommodation"].upper() != selected_group.upper():
         continue
     key = (row["Year"], row["Month"])
-    if key not in monthly_metrics:
-        monthly_metrics[key] = {"Total Price":0, "Owner Profit":0, "Total Expenses":0}
-    try:
-        monthly_metrics[key]["Total Expenses"] += float(row["Amount"])
-    except:
-        pass
+    monthly_metrics[key]["Total Expenses"] += float(row["Amount"])  # αθροιστικά
+
+# Δημιουργία πίνακα για εμφάνιση
+monthly_table = pd.DataFrame([
+    {
+        "Έτος": year,
+        "Μήνας": months_el[month],
+        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
+        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
+    }
+    for (year, month), v in sorted(monthly_metrics.items())
+])
+
+st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
+st.dataframe(monthly_table, width="stretch", hide_index=True)
