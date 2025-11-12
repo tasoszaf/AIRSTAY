@@ -115,35 +115,42 @@ filtered_df = reservations_df[reservations_df["Group"]==selected_group].copy()
 filtered_df = filtered_df.sort_values(["Arrival"]).reset_index(drop=True)
 
 # -------------------------------------------------------------
-# Metrics ανά μήνα (Reservations + Expenses)
+# Metrics ανά μήνα
 # -------------------------------------------------------------
 months_el = {
     1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
     7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
 }
 
-monthly_metrics = defaultdict(lambda: {"Total Price":0, "Owner Profit":0, "Total Expenses":0})
+monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
-# Προσθήκη κρατήσεων
+# Συνολική τιμή και owner profit από κρατήσεις
 for idx, row in filtered_df.iterrows():
-    month = int(row["Month"])
-    year = int(row["Year"])
+    days_total = row["Days"]
+    if days_total == 0:
+        continue
+    price_per_day = row["Total Price"] / days_total
+    owner_profit_per_day = row["Owner Profit"] / days_total
+    month = row["Month"]
+    year = row["Year"]
     key = (year, month)
     monthly_metrics[key]["Total Price"] += row["Total Price"]
     monthly_metrics[key]["Owner Profit"] += row["Owner Profit"]
 
-# Προσθήκη εξόδων
+# Προσθήκη εξόδων αθροιστικά
+def parse_amount(v):
+    try:
+        return float(v)
+    except:
+        return 0.0
+
 for idx, row in expenses_df.iterrows():
     if row["Accommodation"].upper() != selected_group.upper():
         continue
-    month = int(row["Month"])
-    year = int(row["Year"])
-    key = (year, month)
-    if key not in monthly_metrics:
-        monthly_metrics[key] = {"Total Price":0, "Owner Profit":0, "Total Expenses":0}
-    monthly_metrics[key]["Total Expenses"] += float(row["Amount"])
+    key = (int(row["Year"]), int(row["Month"]))
+    monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
 
-# Δημιουργία DataFrame metrics
+# Δημιουργία πίνακα metrics
 monthly_table = pd.DataFrame([
     {
         "Έτος": year,
@@ -156,13 +163,13 @@ monthly_table = pd.DataFrame([
 ])
 
 # -------------------------------------------------------------
-# Εμφάνιση Metrics
+# Εμφάνιση metrics πάνω-πάνω
 # -------------------------------------------------------------
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Εμφάνιση Κρατήσεων
+# Εμφάνιση κρατήσεων
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(filtered_df[[
@@ -172,7 +179,7 @@ st.dataframe(filtered_df[[
 ]], width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# 💰 Έξοδα για το επιλεγμένο group
+# 💰 Έξοδα για το επιλεγμένο group (χωρίς Date)
 # -------------------------------------------------------------
 group_expenses = expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()].copy()
 group_expenses = group_expenses.sort_values(["Year","Month"], ascending=[False,False]).reset_index(drop=True)
@@ -182,53 +189,34 @@ if group_expenses.empty:
     st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
 else:
     st.dataframe(
-        group_expenses[["Month", "Year", "Accommodation", "Category", "Amount", "Description"]],
+        group_expenses[["Month","Year","Accommodation","Category","Amount","Description"]],
         width=700,
         hide_index=True
     )
 
 # -------------------------------------------------------------
-# Αρχικοποίηση Session State για φόρμα εξόδων
-# -------------------------------------------------------------
-for key, default in {
-    "exp_month_select": today.month,
-    "exp_category_input": "",
-    "exp_amount_input": 0.0,
-    "exp_description_input": ""
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-# -------------------------------------------------------------
 # ➕ Φόρμα προσθήκης νέου εξόδου
 # -------------------------------------------------------------
 st.subheader("➕ Προσθήκη νέου εξόδου")
+
+# Αρχικοποίηση default values στο session_state (αν δεν υπάρχουν)
+if "exp_month_select" not in st.session_state:
+    st.session_state["exp_month_select"] = today.month
+if "exp_category_input" not in st.session_state:
+    st.session_state["exp_category_input"] = ""
+if "exp_amount_input" not in st.session_state:
+    st.session_state["exp_amount_input"] = 0.0
+if "exp_description_input" not in st.session_state:
+    st.session_state["exp_description_input"] = ""
+
 with st.form("add_expense_form"):
-    exp_month = st.selectbox(
-        "Μήνας",
-        list(range(1, 13)),
-        index=st.session_state["exp_month_select"] - 1,
-        key="exp_month_select"
-    )
-    exp_category = st.text_input(
-        "Κατηγορία",
-        value=st.session_state["exp_category_input"],
-        key="exp_category_input"
-    )
-    exp_amount = st.number_input(
-        "Ποσό (€)",
-        min_value=0.0,
-        format="%.2f",
-        value=st.session_state["exp_amount_input"],
-        key="exp_amount_input"
-    )
-    exp_description = st.text_area(
-        "Περιγραφή",
-        value=st.session_state["exp_description_input"],
-        key="exp_description_input"
-    )
+    exp_month = st.selectbox("Μήνας", list(range(1, 13)), index=st.session_state["exp_month_select"]-1, key="exp_month_select")
+    exp_category = st.text_input("Κατηγορία", value=st.session_state["exp_category_input"], key="exp_category_input")
+    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f", value=st.session_state["exp_amount_input"], key="exp_amount_input")
+    exp_description = st.text_area("Περιγραφή", value=st.session_state["exp_description_input"], key="exp_description_input")
 
     submitted = st.form_submit_button("💾 Αποθήκευση εξόδου", use_container_width=True)
+
     if submitted:
         new_expense = pd.DataFrame([{
             "ID": len(expenses_df) + 1,
@@ -243,10 +231,5 @@ with st.form("add_expense_form"):
         expenses_df.to_excel(EXPENSES_FILE, index=False)
         st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς.")
 
-        # Καθαρισμός πεδίων φόρμας
-        st.session_state["exp_month_select"] = today.month
-        st.session_state["exp_category_input"] = ""
-        st.session_state["exp_amount_input"] = 0.0
-        st.session_state["exp_description_input"] = ""
-
+        # Καθαρισμός πεδίων μέσω rerun (χωρίς άμεσο set στο session_state)
         st.experimental_rerun()
