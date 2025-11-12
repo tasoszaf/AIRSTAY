@@ -331,46 +331,45 @@ def upload_to_github(local_path, repo_path):
 upload_to_github(RESERVATIONS_FILE, "reservations.xlsx")
 
 # -------------------------------------------------------------
-# Έξοδα για το επιλεγμένο group
+# 💰 Έξοδα για το επιλεγμένο group
 # -------------------------------------------------------------
 group_expenses = expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()].copy()
 group_expenses = group_expenses.sort_values("Date", ascending=False).reset_index(drop=True)
 
 st.subheader(f"💰 Έξοδα για {selected_group}")
+
 if group_expenses.empty:
     st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
 else:
-    st.dataframe(
-        group_expenses[["Date", "Month", "Accommodation", "Category", "Amount", "Description"]],
-        width=700,
-        hide_index=True
-    )
+    # Εμφάνιση εξόδων με κουμπί διαγραφής
+    for idx, row in group_expenses.iterrows():
+        with st.expander(f"📆 {row['Date']} | {row['Category']} | {row['Amount']}€"):
+            st.write(f"**Περιγραφή:** {row['Description']}")
+            st.write(f"**Μήνας:** {row['Month']} / **Έτος:** {row['Year']}")
+            delete_button = st.button(f"🗑️ Διαγραφή εξόδου #{row['ID']}", key=f"delete_{row['ID']}")
+            if delete_button:
+                expenses_df = expenses_df[expenses_df["ID"] != row["ID"]]
+                expenses_df.to_excel(EXPENSES_FILE, index=False)
+                st.success(f"✅ Το έξοδο με ID {row['ID']} διαγράφηκε επιτυχώς.")
+                upload_to_github(EXPENSES_FILE, "expenses.xlsx")
+                st.experimental_rerun()
 
 # -------------------------------------------------------------
-# Φόρμα προσθήκης νέου εξόδου (με καθάρισμα μετά)
+# ➕ Φόρμα προσθήκης νέου εξόδου
 # -------------------------------------------------------------
 st.subheader("➕ Προσθήκη νέου εξόδου")
 
-if "exp_month" not in st.session_state:
-    st.session_state.exp_month = today.month
-if "exp_category" not in st.session_state:
-    st.session_state.exp_category = ""
-if "exp_amount" not in st.session_state:
-    st.session_state.exp_amount = 0.0
-if "exp_description" not in st.session_state:
-    st.session_state.exp_description = ""
+with st.form("add_expense_form"):
+    exp_month = st.selectbox("Μήνας", list(range(1, 13)), index=today.month - 1, key="exp_month_select")
+    exp_category = st.text_input("Κατηγορία", key="exp_category_input")
+    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f", key="exp_amount_input")
+    exp_description = st.text_area("Περιγραφή", key="exp_description_input")
 
-with st.form("add_expense_form", clear_on_submit=True):
-    exp_month = st.selectbox("Μήνας", list(range(1,13)), index=st.session_state.exp_month-1, key="exp_month")
-    exp_category = st.text_input("Κατηγορία", value=st.session_state.exp_category, key="exp_category")
-    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f", value=st.session_state.exp_amount, key="exp_amount")
-    exp_description = st.text_area("Περιγραφή", value=st.session_state.exp_description, key="exp_description")
-
-    submitted = st.form_submit_button("💾 Αποθήκευση εξόδου")
+    submitted = st.form_submit_button("💾 Αποθήκευση εξόδου", use_container_width=True)
 
     if submitted:
         new_expense = pd.DataFrame([{
-            "ID": int(datetime.now().timestamp()),
+            "ID": len(expenses_df) + 1,
             "Date": date.today().strftime("%Y-%m-%d"),
             "Month": exp_month,
             "Year": today.year,
@@ -379,15 +378,16 @@ with st.form("add_expense_form", clear_on_submit=True):
             "Amount": exp_amount,
             "Description": exp_description
         }])
+
         expenses_df = pd.concat([expenses_df, new_expense], ignore_index=True)
         expenses_df.to_excel(EXPENSES_FILE, index=False)
+        st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς.")
+
+        # Ανέβασμα στο GitHub
         upload_to_github(EXPENSES_FILE, "expenses.xlsx")
-        st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς!")
 
-        # Καθάρισμα πεδίων
-        st.session_state.exp_month = today.month
-        st.session_state.exp_category = ""
-        st.session_state.exp_amount = 0.0
-        st.session_state.exp_description = ""
+        # Καθαρισμός πεδίων φόρμας
+        for key in ["exp_month_select", "exp_category_input", "exp_amount_input", "exp_description_input"]:
+            st.session_state[key] = None
 
-        st.rerun()
+        st.experimental_rerun()
