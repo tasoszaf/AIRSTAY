@@ -341,18 +341,11 @@ st.subheader(f"💰 Έξοδα για {selected_group}")
 if group_expenses.empty:
     st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
 else:
-    # Εμφάνιση εξόδων με κουμπί διαγραφής
-    for idx, row in group_expenses.iterrows():
-        with st.expander(f"📆 {row['Date']} | {row['Category']} | {row['Amount']}€"):
-            st.write(f"**Περιγραφή:** {row['Description']}")
-            st.write(f"**Μήνας:** {row['Month']} / **Έτος:** {row['Year']}")
-            delete_button = st.button(f"🗑️ Διαγραφή εξόδου #{row['ID']}", key=f"delete_{row['ID']}")
-            if delete_button:
-                expenses_df = expenses_df[expenses_df["ID"] != row["ID"]]
-                expenses_df.to_excel(EXPENSES_FILE, index=False)
-                st.success(f"✅ Το έξοδο με ID {row['ID']} διαγράφηκε επιτυχώς.")
-                upload_to_github(EXPENSES_FILE, "expenses.xlsx")
-                st.experimental_rerun()
+    st.dataframe(
+        group_expenses[["Date", "Month", "Accommodation", "Category", "Amount", "Description"]],
+        width=700,
+        hide_index=True
+    )
 
 # -------------------------------------------------------------
 # ➕ Φόρμα προσθήκης νέου εξόδου
@@ -391,3 +384,4 @@ with st.form("add_expense_form"):
             st.session_state[key] = None
 
         st.experimental_rerun()
+
