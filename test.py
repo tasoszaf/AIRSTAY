@@ -331,12 +331,20 @@ def upload_to_github(local_path, repo_path):
 upload_to_github(RESERVATIONS_FILE, "reservations.xlsx")
 
 # -------------------------------------------------------------
-# Πίνακας εξόδων για το group
+# Έξοδα για το επιλεγμένο group
 # -------------------------------------------------------------
-group_expenses = expenses_df[expenses_df["Accommodation"].isin(APARTMENTS[selected_group])].copy()
+group_expenses = expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()].copy()
 group_expenses = group_expenses.sort_values("Date", ascending=False).reset_index(drop=True)
+
 st.subheader(f"💰 Έξοδα για {selected_group}")
-st.dataframe(group_expenses[["Month","Accommodation","Category","Amount","Description"]], width=700, hide_index=True)
+if group_expenses.empty:
+    st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
+else:
+    st.dataframe(
+        group_expenses[["Date", "Month", "Accommodation", "Category", "Amount", "Description"]],
+        width=700,
+        hide_index=True
+    )
 
 # -------------------------------------------------------------
 # Φόρμα προσθήκης νέου εξόδου
@@ -344,7 +352,6 @@ st.dataframe(group_expenses[["Month","Accommodation","Category","Amount","Descri
 st.subheader("➕ Προσθήκη νέου εξόδου")
 with st.form("add_expense_form"):
     exp_month = st.selectbox("Μήνας", list(range(1,13)), index=today.month-1)
-    exp_accommodation = st.selectbox("Κατάλυμα", APARTMENTS[selected_group])
     exp_category = st.text_input("Κατηγορία")
     exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
     exp_description = st.text_area("Περιγραφή")
@@ -353,22 +360,27 @@ with st.form("add_expense_form"):
 
     if submitted:
         new_expense = pd.DataFrame([{
+            "ID": len(expenses_df) + 1,
             "Date": date.today().strftime("%Y-%m-%d"),
             "Month": exp_month,
             "Year": today.year,
-            "Accommodation": exp_accommodation,
+            "Accommodation": selected_group,
             "Category": exp_category,
             "Amount": exp_amount,
             "Description": exp_description
         }])
         expenses_df = pd.concat([expenses_df, new_expense], ignore_index=True)
         expenses_df.to_excel(EXPENSES_FILE, index=False)
-        st.success("✅ Το έξοδο αποθηκεύτηκε τοπικά.")
+        st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς.")
 
-        # Αυτόματο push στο GitHub
+        # Αυτόματο ανέβασμα στο GitHub
         upload_to_github(EXPENSES_FILE, "expenses.xlsx")
 
         # Ενημέρωση πίνακα αμέσως
-        group_expenses = expenses_df[expenses_df["Accommodation"].isin(APARTMENTS[selected_group])].copy()
-        group_expenses = group_expenses.sort_values("Date", ascending=False).reset_index(drop=True)
-        st.dataframe(group_expenses[["Month","Accommodation","Category","Amount","Description"]], width=700, hide_index=True)
+        st.dataframe(
+            expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()]
+            [["Date", "Month", "Accommodation", "Category", "Amount", "Description"]],
+            width=700,
+            hide_index=True
+        )
+
