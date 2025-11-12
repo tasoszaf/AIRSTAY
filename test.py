@@ -4,6 +4,7 @@ import requests
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
+from github import Github 
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -25,13 +26,10 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Επιλογή λειτουργίας
 # -------------------------------------------------------------
-# "show_only" → κρατήσεις από Excel + API μόνο τρέχοντος μήνα (μέχρι χθες)
-# "save_and_show" → επιλέγεις μήνες και αποθηκεύει στο Excel
 FETCH_MODE = "save_and_show"  # ή "show_only"
 
-# Αν save_and_show → εδώ ορίζεις τους μήνες
 start_month = 1  # από
-end_month = 10    # έως
+end_month = 10   # έως
 
 # -------------------------------------------------------------
 # Ημερομηνίες
@@ -47,7 +45,7 @@ else:
     next_month = date(today.year, end_month, 28) + timedelta(days=4)
     last_day = (next_month - timedelta(days=next_month.day)).day
     to_date = date(today.year, end_month, last_day).strftime("%Y-%m-%d")
-        
+
 # -------------------------------------------------------------
 # Καταλύματα & Settings
 # -------------------------------------------------------------
@@ -91,6 +89,7 @@ APARTMENT_SETTINGS = {
     "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0},
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
 }
+
 # -------------------------------------------------------------
 # Φόρτωση Excel
 # -------------------------------------------------------------
@@ -109,45 +108,10 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["ID","Date","Month","Year","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Συναρτήσεις υπολογισμού
-# -------------------------------------------------------------
-def compute_price_without_tax(price, nights, month, apt_name):
-    if not price or not nights:
-        return 0.0
-    settings = APARTMENT_SETTINGS.get(apt_name, {"winter_base": 2, "summer_base": 8})
-    base = settings["winter_base"] if month in [11,12,1,2] else settings["summer_base"]
-    adjusted = price - base * nights
-    return round((adjusted / 1.13) - (adjusted * 0.005), 2)
-
-def compute_booking_fee(platform_name: str, price: float) -> float:
-    if not platform_name:
-        return 0.0
-    p = platform_name.strip().lower()
-    if p in {"website","direct","direct booking","direct-booking","site","web"}:
-        rate = 0.00
-    elif "booking" in p:
-        rate = 0.17
-    elif "airbnb" in p:
-        rate = 0.15
-    elif "expedia" in p:
-        rate = 0.18
-    else:
-        rate = 0.00
-    return round((price or 0)*rate, 2)
-
-def parse_amount(v):
-    try:
-        return float(str(v).replace("€","").strip())
-    except:
-        return 0.0
-
-# -------------------------------------------------------------
 # Συνάρτηση ανάκτησης κρατήσεων
 # -------------------------------------------------------------
 def fetch_reservations(from_date, to_date):
     rows = []
-
-    # IDs για τα THRESH_A3–A6
     THRESH_IDS = {1200587, 563634, 563637, 563640}
 
     for group_name, id_list in APARTMENTS.items():
@@ -184,7 +148,6 @@ def fetch_reservations(from_date, to_date):
                     except:
                         continue
 
-                    # μόνο checkout >= 2/1/2025
                     if departure_dt < datetime(2025, 1, 2):
                         continue
 
@@ -194,18 +157,27 @@ def fetch_reservations(from_date, to_date):
                     children = int(b.get("children") or 0)
                     guests = adults + children
                     days = max((departure_dt - arrival_dt).days, 0)
-
                     platform_lower = platform.lower().strip()
                     if "expedia" in platform_lower:
                         price = price / 0.82
-
                     apt_real_id = b.get("apartment", {}).get("id", apt_id)
                     if apt_real_id in THRESH_IDS:
                         price_wo_tax = round(price, 2)
                     else:
-                        price_wo_tax = compute_price_without_tax(price, days, arrival_dt.month, group_name)
-
-                    fee = compute_booking_fee(platform, price)
+                        settings = APARTMENT_SETTINGS.get(group_name, {"winter_base":2,"summer_base":8})
+                        base = settings["winter_base"] if arrival_dt.month in [11,12,1,2] else settings["summer_base"]
+                        adjusted = price - base * days
+                        price_wo_tax = round((adjusted / 1.13) - (adjusted * 0.005), 2)
+                    if not platform:
+                        fee = 0
+                    elif "booking" in platform_lower:
+                        fee = round(price * 0.17, 2)
+                    elif "airbnb" in platform_lower:
+                        fee = round(price * 0.15, 2)
+                    elif "expedia" in platform_lower:
+                        fee = round(price * 0.18, 2)
+                    else:
+                        fee = 0
                     settings = APARTMENT_SETTINGS.get(group_name, {"airstay_commission": 0.248})
                     airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
                     owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
@@ -225,9 +197,9 @@ def fetch_reservations(from_date, to_date):
                         "Price Without Tax": round(price_wo_tax,2),
                         "Airstay Commission": round(airstay_commission,2),
                         "Owner Profit": round(owner_profit,2),
-                        "Month": arrival_dt.month
+                        "Month": arrival_dt.month,
+                        "Year": arrival_dt.year
                     })
-
                 if data.get("page") and data.get("page") < data.get("page_count",1):
                     params["page"] += 1
                 else:
@@ -235,7 +207,7 @@ def fetch_reservations(from_date, to_date):
     return rows
 
 # -------------------------------------------------------------
-# Fetch & αποθήκευση/εμφάνιση
+# Fetch & Save
 # -------------------------------------------------------------
 all_rows = fetch_reservations(from_date, to_date)
 
@@ -245,87 +217,52 @@ if FETCH_MODE == "save_and_show":
     reservations_df.to_excel(RESERVATIONS_FILE, index=False)
     st.success(f"✅ Αποθηκεύτηκαν {len(all_rows)} κρατήσεις ({from_date} → {to_date})")
 else:
-    new_df = pd.DataFrame(all_rows)
-    reservations_df = pd.concat([reservations_df, new_df], ignore_index=True)
-    reservations_df.drop_duplicates(subset=["ID"], inplace=True)
-    st.info(f"ℹ️ Φορτώθηκαν {len(new_df)} κρατήσεις τρέχοντος μήνα μόνο για εμφάνιση")
+    st.info(f"Φορτώθηκαν {len(all_rows)} κρατήσεις μόνο για εμφάνιση")
 
 # -------------------------------------------------------------
-# Sidebar επιλογής καταλύματος
+# Sidebar
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 filtered_df = reservations_df[reservations_df["Group"]==selected_group].copy()
 filtered_df = filtered_df.sort_values(["Arrival"]).reset_index(drop=True)
 
-# -------------------------------------------------------------
-# Ονόματα μηνών
-# -------------------------------------------------------------
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
+st.dataframe(filtered_df, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------
-# Metrics ανά έτος + μήνα (μόνο 2025 μέχρι τρέχον μήνα)
+# 📤 Αυτόματο ανέβασμα στο GitHub
 # -------------------------------------------------------------
-monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
+def upload_to_github(local_path, repo_path):
+    """Ανεβάζει ή ενημερώνει ένα αρχείο στο GitHub repo"""
+    try:
+        token = st.secrets["github"]["token"]
+        username = st.secrets["github"]["username"]
+        repo_name = st.secrets["github"]["repo"]
 
-for idx, row in filtered_df.iterrows():
-    arrival = pd.to_datetime(row["Arrival"])
-    departure = pd.to_datetime(row["Departure"])
-    days_total = (departure - arrival).days
-    if days_total == 0:
-        continue
-    price_per_day = row["Total Price"] / days_total
-    owner_profit_per_day = row["Owner Profit"] / days_total
+        g = Github(token)
+        repo = g.get_user(username).get_repo(repo_name)
 
-    for i in range(days_total):
-        day = arrival + pd.Timedelta(days=i)
-        if day.date() > today:
-            continue
-        key = (day.year, day.month)
-        monthly_metrics[key]["Total Price"] += price_per_day
-        monthly_metrics[key]["Owner Profit"] += owner_profit_per_day
+        with open(local_path, "rb") as f:
+            file_content = f.read()
 
-# Προσθήκη εξόδων
-for (year, month) in monthly_metrics.keys():
-    df_exp_month = expenses_df[
-        (expenses_df["Month"]==month) &
-        (pd.to_datetime(expenses_df["Date"]).dt.year==year) &
-        (expenses_df["Accommodation"].str.upper()==selected_group.upper())
-    ]
-    monthly_metrics[(year, month)]["Total Expenses"] = df_exp_month["Amount"].apply(parse_amount).sum()
+        try:
+            contents = repo.get_contents(repo_path)
+            repo.update_file(
+                path=contents.path,
+                message=f"Αυτόματη ενημέρωση από Streamlit ({datetime.now():%Y-%m-%d %H:%M})",
+                content=file_content,
+                sha=contents.sha,
+            )
+            st.success("✅ Το reservations.xlsx ενημερώθηκε στο GitHub.")
+        except Exception:
+            repo.create_file(
+                path=repo_path,
+                message=f"Προσθήκη νέου reservations.xlsx ({datetime.now():%Y-%m-%d %H:%M})",
+                content=file_content,
+            )
+            st.success("✅ Το reservations.xlsx ανέβηκε στο GitHub.")
+    except Exception as e:
+        st.error(f"❌ Σφάλμα κατά την αποστολή στο GitHub: {e}")
 
-# Φιλτράρουμε μόνο 2025 μέχρι τρέχον μήνα
-monthly_metrics = {k:v for k,v in monthly_metrics.items() if k[0]==2025 and k[1]<=today.month}
-
-# DataFrame για εμφάνιση
-monthly_table = pd.DataFrame([
-    {
-        "Έτος": year,
-        "Μήνας": months_el[month],
-        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
-        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
-    }
-    for (year, month), v in sorted(monthly_metrics.items())
-])
-
-st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
-st.dataframe(monthly_table, width="stretch", hide_index=True)
-
-# -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
-# -------------------------------------------------------------
-st.subheader(f"📅 Κρατήσεις ({selected_group})")
-st.dataframe(
-    filtered_df[[
-        "ID","Apartment_ID","Group","Arrival","Departure","Days",
-        "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit"
-    ]],
-    width="stretch",
-    hide_index=True
-)
-
+# Εκτέλεση αυτόματης αποστολής
+upload_to_github(RESERVATIONS_FILE, "reservations.xlsx")
