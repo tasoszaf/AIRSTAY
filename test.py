@@ -162,18 +162,19 @@ def fetch_reservations(from_date, to_date):
                         base = settings["winter_base"] if arrival_dt.month in [11,12,1,2] else settings["summer_base"]
                         adjusted = price - base * days
                         price_wo_tax = round((adjusted / 1.13) - (adjusted * 0.005), 2)
-                    if not platform:
-                        fee = 0
-                    elif platform_lower in {"direct booking", "website"}:
-                        fee= 0
-                    elif "Booking.com" in platform_lower:
+                    platform_lower = platform.lower().strip()
+
+                   if platform_lower in {"direct booking", "website"}:
+                        fee = 0       
+                   elif platform_lower == "booking.com":
                         fee = round(price * 0.17, 2)
-                    elif "Airbnb" in platform_lower:
+                   elif platform_lower == "airbnb":
                         fee = round(price * 0.15, 2)
-                    elif "Expedia" in platform_lower:
+                   elif platform_lower == "expedia":
                         fee = round(price * 0.18, 2)
-                    else:
+                   else:
                         fee = 0
+
                     settings = APARTMENT_SETTINGS.get(group_name, {"airstay_commission": 0.248})
                     airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
                     owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
