@@ -347,20 +347,30 @@ else:
     )
 
 # -------------------------------------------------------------
-# Φόρμα προσθήκης νέου εξόδου
+# Φόρμα προσθήκης νέου εξόδου (με καθάρισμα μετά)
 # -------------------------------------------------------------
 st.subheader("➕ Προσθήκη νέου εξόδου")
-with st.form("add_expense_form"):
-    exp_month = st.selectbox("Μήνας", list(range(1,13)), index=today.month-1)
-    exp_category = st.text_input("Κατηγορία")
-    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
-    exp_description = st.text_area("Περιγραφή")
-    
-    submitted = st.form_submit_button("Αποθήκευση εξόδου")
+
+if "exp_month" not in st.session_state:
+    st.session_state.exp_month = today.month
+if "exp_category" not in st.session_state:
+    st.session_state.exp_category = ""
+if "exp_amount" not in st.session_state:
+    st.session_state.exp_amount = 0.0
+if "exp_description" not in st.session_state:
+    st.session_state.exp_description = ""
+
+with st.form("add_expense_form", clear_on_submit=True):
+    exp_month = st.selectbox("Μήνας", list(range(1,13)), index=st.session_state.exp_month-1, key="exp_month")
+    exp_category = st.text_input("Κατηγορία", value=st.session_state.exp_category, key="exp_category")
+    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f", value=st.session_state.exp_amount, key="exp_amount")
+    exp_description = st.text_area("Περιγραφή", value=st.session_state.exp_description, key="exp_description")
+
+    submitted = st.form_submit_button("💾 Αποθήκευση εξόδου")
 
     if submitted:
         new_expense = pd.DataFrame([{
-            "ID": len(expenses_df) + 1,
+            "ID": int(datetime.now().timestamp()),
             "Date": date.today().strftime("%Y-%m-%d"),
             "Month": exp_month,
             "Year": today.year,
@@ -371,16 +381,13 @@ with st.form("add_expense_form"):
         }])
         expenses_df = pd.concat([expenses_df, new_expense], ignore_index=True)
         expenses_df.to_excel(EXPENSES_FILE, index=False)
-        st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς.")
-
-        # Αυτόματο ανέβασμα στο GitHub
         upload_to_github(EXPENSES_FILE, "expenses.xlsx")
+        st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς!")
 
-        # Ενημέρωση πίνακα αμέσως
-        st.dataframe(
-            expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()]
-            [["Date", "Month", "Accommodation", "Category", "Amount", "Description"]],
-            width=700,
-            hide_index=True
-        )
+        # Καθάρισμα πεδίων
+        st.session_state.exp_month = today.month
+        st.session_state.exp_category = ""
+        st.session_state.exp_amount = 0.0
+        st.session_state.exp_description = ""
 
+        st.rerun()
