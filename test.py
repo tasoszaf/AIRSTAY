@@ -164,6 +164,8 @@ def fetch_reservations(from_date, to_date):
                         price_wo_tax = round((adjusted / 1.13) - (adjusted * 0.005), 2)
                     if not platform:
                         fee = 0
+                    elif platform_lower in {"direct booking", "website"}:
+                        fee= 0
                     elif "Booking.com" in platform_lower:
                         fee = round(price * 0.17, 2)
                     elif "Airbnb" in platform_lower:
