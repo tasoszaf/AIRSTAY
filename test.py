@@ -331,10 +331,10 @@ def upload_to_github(local_path, repo_path):
 upload_to_github(RESERVATIONS_FILE, "reservations.xlsx")
 
 # -------------------------------------------------------------
-# 💰 Έξοδα για το επιλεγμένο group
+# 💰 Έξοδα για το επιλεγμένο group (χωρίς Date)
 # -------------------------------------------------------------
 group_expenses = expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()].copy()
-group_expenses = group_expenses.sort_values("Date", ascending=False).reset_index(drop=True)
+group_expenses = group_expenses.sort_values(["Year","Month"], ascending=[False,False]).reset_index(drop=True)
 
 st.subheader(f"💰 Έξοδα για {selected_group}")
 
@@ -342,13 +342,13 @@ if group_expenses.empty:
     st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
 else:
     st.dataframe(
-        group_expenses[["Date", "Month", "Accommodation", "Category", "Amount", "Description"]],
+        group_expenses[["Month", "Year", "Accommodation", "Category", "Amount", "Description"]],
         width=700,
         hide_index=True
     )
 
 # -------------------------------------------------------------
-# ➕ Φόρμα προσθήκης νέου εξόδου
+# ➕ Φόρμα προσθήκης νέου εξόδου (χωρίς Date)
 # -------------------------------------------------------------
 st.subheader("➕ Προσθήκη νέου εξόδου")
 
@@ -363,7 +363,6 @@ with st.form("add_expense_form"):
     if submitted:
         new_expense = pd.DataFrame([{
             "ID": len(expenses_df) + 1,
-            "Date": date.today().strftime("%Y-%m-%d"),
             "Month": exp_month,
             "Year": today.year,
             "Accommodation": selected_group,
@@ -385,3 +384,13 @@ with st.form("add_expense_form"):
 
         st.experimental_rerun()
 
+# -------------------------------------------------------------
+# Ενημέρωση metrics με τα έξοδα
+# -------------------------------------------------------------
+for (year, month) in monthly_metrics.keys():
+    total_expenses = expenses_df[
+        (expenses_df["Month"] == month) &
+        (expenses_df["Year"] == year) &
+        (expenses_df["Accommodation"].str.upper() == selected_group.upper())
+    ]["Amount"].sum()
+    monthly_metrics[(year, month)]["Total Expenses"] = total_expenses
