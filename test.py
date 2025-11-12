@@ -104,7 +104,7 @@ except FileNotFoundError:
 try:
     expenses_df = pd.read_excel(EXPENSES_FILE)
 except FileNotFoundError:
-    expenses_df = pd.DataFrame(columns=["ID","Date","Month","Year","Accommodation","Category","Amount","Description"])
+    expenses_df = pd.DataFrame(columns=["ID","Month","Year","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
 # Συνάρτηση ανάκτησης κρατήσεων
@@ -159,7 +159,6 @@ def fetch_reservations(from_date, to_date):
                     if "expedia" in platform.lower():
                         price = price / 0.82
 
-                    # Υπολογισμός προμήθειας
                     platform_lower = platform.lower().strip()
                     if platform_lower in {"direct booking", "website"}:
                         fee = 0
@@ -231,48 +230,29 @@ filtered_df = reservations_df[reservations_df["Group"]==selected_group].copy()
 filtered_df = filtered_df.sort_values(["Arrival"]).reset_index(drop=True)
 
 # -------------------------------------------------------------
-# Metrics ανά μήνα
+# Metrics ανά μήνα (κρατήσεις + έξοδα)
 # -------------------------------------------------------------
 months_el = {
     1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
     7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
 }
 
-monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
+monthly_metrics = defaultdict(lambda: {"Total Price":0, "Owner Profit":0, "Total Expenses":0})
 
+# Προσθήκη κρατήσεων
 for idx, row in filtered_df.iterrows():
-    arrival = pd.to_datetime(row["Arrival"])
-    departure = pd.to_datetime(row["Departure"])
-    days_total = (departure - arrival).days
-    if days_total == 0:
+    key = (row["Year"], row["Month"])
+    monthly_metrics[key]["Total Price"] += row["Total Price"]
+    monthly_metrics[key]["Owner Profit"] += row["Owner Profit"]
+
+# Προσθήκη εξόδων αθροιστικά
+for idx, row in expenses_df.iterrows():
+    if row["Accommodation"].upper() != selected_group.upper():
         continue
-    price_per_day = row["Total Price"] / days_total
-    owner_profit_per_day = row["Owner Profit"] / days_total
-    for i in range(days_total):
-        day = arrival + pd.Timedelta(days=i)
-        if day.date() > today:
-            continue
-        key = (day.year, day.month)
-        monthly_metrics[key]["Total Price"] += price_per_day
-        monthly_metrics[key]["Owner Profit"] += owner_profit_per_day
+    key = (row["Year"], row["Month"])
+    monthly_metrics[key]["Total Expenses"] += float(row["Amount"])
 
-# Προσθήκη εξόδων
-def parse_amount(v):
-    try:
-        return float(str(v).replace("€","").strip())
-    except:
-        return 0.0
-
-for (year, month) in monthly_metrics.keys():
-    df_exp_month = expenses_df[
-        (expenses_df["Month"]==month) &
-        (pd.to_datetime(expenses_df["Date"]).dt.year==year) &
-        (expenses_df["Accommodation"].str.upper()==selected_group.upper())
-    ]
-    monthly_metrics[(year, month)]["Total Expenses"] = df_exp_month["Amount"].apply(parse_amount).sum()
-
-monthly_metrics = {k:v for k,v in monthly_metrics.items() if k[0]==2025 and k[1]<=today.month}
-
+# Δημιουργία πίνακα για εμφάνιση
 monthly_table = pd.DataFrame([
     {
         "Έτος": year,
@@ -287,6 +267,9 @@ monthly_table = pd.DataFrame([
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
+# -------------------------------------------------------------
+# Κρατήσεις
+# -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(filtered_df[[
     "ID","Apartment_ID","Group","Arrival","Departure","Days",
@@ -317,34 +300,16 @@ def upload_to_github(local_path, repo_path):
                 content=file_content,
                 sha=contents.sha,
             )
-            st.success("✅ Το reservations.xlsx ενημερώθηκε στο GitHub.")
         except Exception:
             repo.create_file(
                 path=repo_path,
-                message=f"Προσθήκη νέου reservations.xlsx ({datetime.now():%Y-%m-%d %H:%M})",
+                message=f"Προσθήκη νέου αρχείου ({datetime.now():%Y-%m-%d %H:%M})",
                 content=file_content,
             )
-            st.success("✅ Το reservations.xlsx ανέβηκε στο GitHub.")
     except Exception as e:
         st.error(f"❌ Σφάλμα κατά την αποστολή στο GitHub: {e}")
 
 upload_to_github(RESERVATIONS_FILE, "reservations.xlsx")
-
-# -------------------------------------------------------------
-# 💰 Έξοδα για το επιλεγμένο group (χωρίς Date)
-# -------------------------------------------------------------
-group_expenses = expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()].copy()
-group_expenses = group_expenses.sort_values(["Year","Month"], ascending=[False,False]).reset_index(drop=True)
-
-st.subheader(f"💰 Έξοδα για {selected_group}")
-if group_expenses.empty:
-    st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
-else:
-    st.dataframe(
-        group_expenses[["Month", "Year", "Accommodation", "Category", "Amount", "Description"]],
-        width=700,
-        hide_index=True
-    )
 
 # -------------------------------------------------------------
 # ➕ Φόρμα προσθήκης νέου εξόδου (χωρίς Date)
@@ -382,34 +347,17 @@ with st.form("add_expense_form"):
         st.experimental_rerun()
 
 # -------------------------------------------------------------
-# Metrics ανά μήνα (κρατήσεις + αθροιστικά έξοδα)
+# Εμφάνιση εξόδων για το επιλεγμένο group
 # -------------------------------------------------------------
-monthly_metrics = defaultdict(lambda: {"Total Price":0, "Owner Profit":0, "Total Expenses":0})
+group_expenses = expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()].copy()
+group_expenses = group_expenses.sort_values(["Year","Month"], ascending=[False,False]).reset_index(drop=True)
 
-# Προσθήκη κρατήσεων
-for idx, row in filtered_df.iterrows():
-    key = (row["Year"], row["Month"])
-    monthly_metrics[key]["Total Price"] += row["Total Price"]
-    monthly_metrics[key]["Owner Profit"] += row["Owner Profit"]
-
-# Προσθήκη εξόδων αθροιστικά
-for idx, row in expenses_df.iterrows():
-    if row["Accommodation"].upper() != selected_group.upper():
-        continue
-    key = (row["Year"], row["Month"])
-    monthly_metrics[key]["Total Expenses"] += float(row["Amount"])  # αθροιστικά
-
-# Δημιουργία πίνακα για εμφάνιση
-monthly_table = pd.DataFrame([
-    {
-        "Έτος": year,
-        "Μήνας": months_el[month],
-        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
-        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
-    }
-    for (year, month), v in sorted(monthly_metrics.items())
-])
-
-st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
-st.dataframe(monthly_table, width="stretch", hide_index=True)
+st.subheader(f"💰 Λεπτομέρειες εξόδων για {selected_group}")
+if group_expenses.empty:
+    st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
+else:
+    st.dataframe(
+        group_expenses[["Month", "Year", "Accommodation", "Category", "Amount", "Description"]],
+        width=700,
+        hide_index=True
+    )
