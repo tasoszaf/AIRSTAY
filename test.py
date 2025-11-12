@@ -26,7 +26,7 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Επιλογή λειτουργίας
 # -------------------------------------------------------------
-FETCH_MODE = "save_and_show"  # ή "show_only" ή "save_and_show" 
+FETCH_MODE = "save_and_show"  # ή "show_only"
 start_month = 1
 end_month = 10
 
@@ -112,6 +112,7 @@ except FileNotFoundError:
 def fetch_reservations(from_date, to_date):
     rows = []
     THRESH_IDS = {1200587, 563634, 563637, 563640}
+
     for group_name, id_list in APARTMENTS.items():
         for apt_id in id_list:
             params = {
@@ -130,9 +131,11 @@ def fetch_reservations(from_date, to_date):
                     data = r.json()
                 except requests.exceptions.RequestException:
                     break
+
                 bookings = data.get("bookings", [])
                 if not bookings:
                     break
+
                 for b in bookings:
                     arrival_str = b.get("arrival")
                     departure_str = b.get("departure")
@@ -145,42 +148,45 @@ def fetch_reservations(from_date, to_date):
                         continue
                     if departure_dt < datetime(2025, 1, 2):
                         continue
+
                     platform = (b.get("channel") or {}).get("name") or "Direct booking"
                     price = float(b.get("price") or 0)
                     adults = int(b.get("adults") or 0)
                     children = int(b.get("children") or 0)
                     guests = adults + children
                     days = max((departure_dt - arrival_dt).days, 0)
-                    platform_lower = platform.lower().strip()
-                    if "expedia" in platform_lower:
+
+                    if "expedia" in platform.lower():
                         price = price / 0.82
-                    apt_real_id = b.get("apartment", {}).get("id", apt_id)
-                    if apt_real_id in THRESH_IDS:
+
+                    # Υπολογισμός προμήθειας
+                    platform_lower = platform.lower().strip()
+                    if platform_lower in {"direct booking", "website"}:
+                        fee = 0
+                    elif platform_lower == "booking.com":
+                        fee = round(price * 0.17, 2)
+                    elif platform_lower == "airbnb":
+                        fee = round(price * 0.15, 2)
+                    elif platform_lower == "expedia":
+                        fee = round(price * 0.18, 2)
+                    else:
+                        fee = 0
+
+                    if apt_id in THRESH_IDS:
                         price_wo_tax = round(price, 2)
                     else:
                         settings = APARTMENT_SETTINGS.get(group_name, {"winter_base":2,"summer_base":8})
                         base = settings["winter_base"] if arrival_dt.month in [11,12,1,2] else settings["summer_base"]
                         adjusted = price - base * days
                         price_wo_tax = round((adjusted / 1.13) - (adjusted * 0.005), 2)
-                    platform_lower = platform.lower().strip()
-
-                   if platform_lower in {"direct booking", "website"}:
-                        fee = 0       
-                   elif platform_lower == "booking.com":
-                        fee = round(price * 0.17, 2)
-                   elif platform_lower == "airbnb":
-                        fee = round(price * 0.15, 2)
-                   elif platform_lower == "expedia":
-                        fee = round(price * 0.18, 2)
-                   else:
-                        fee = 0
 
                     settings = APARTMENT_SETTINGS.get(group_name, {"airstay_commission": 0.248})
                     airstay_commission = round(price_wo_tax * settings["airstay_commission"], 2)
                     owner_profit = round(price_wo_tax - fee - airstay_commission, 2)
+
                     rows.append({
                         "ID": b.get("id"),
-                        "Apartment_ID": apt_real_id,
+                        "Apartment_ID": apt_id,
                         "Group": group_name,
                         "Guest Name": b.get("guest-name"),
                         "Arrival": arrival_dt.strftime("%Y-%m-%d"),
@@ -196,6 +202,7 @@ def fetch_reservations(from_date, to_date):
                         "Month": arrival_dt.month,
                         "Year": arrival_dt.year
                     })
+
                 if data.get("page") and data.get("page") < data.get("page_count",1):
                     params["page"] += 1
                 else:
