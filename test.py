@@ -26,7 +26,7 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Επιλογή λειτουργίας
 # -------------------------------------------------------------
-FETCH_MODE = "show_only"  # ή "show_only"
+FETCH_MODE = "save_and_show"  # ή "show_only" ή "save_and_show" 
 start_month = 1
 end_month = 10
 
