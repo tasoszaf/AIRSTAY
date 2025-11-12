@@ -385,12 +385,21 @@ with st.form("add_expense_form"):
         st.experimental_rerun()
 
 # -------------------------------------------------------------
-# Ενημέρωση metrics με τα έξοδα
+# Προσθήκη εξόδων στα metrics ανά μήνα για το επιλεγμένο group
 # -------------------------------------------------------------
-for (year, month) in monthly_metrics.keys():
-    total_expenses = expenses_df[
-        (expenses_df["Month"] == month) &
-        (expenses_df["Year"] == year) &
-        (expenses_df["Accommodation"].str.upper() == selected_group.upper())
-    ]["Amount"].sum()
-    monthly_metrics[(year, month)]["Total Expenses"] = total_expenses
+def parse_amount(v):
+    try:
+        return float(v)
+    except:
+        return 0.0
+
+# Ενημέρωση metrics με τα έξοδα
+for idx, row in expenses_df.iterrows():
+    if row["Accommodation"].upper() != selected_group.upper():
+        continue
+    month = int(row["Month"])
+    year = int(row["Year"])
+    key = (year, month)
+    if key not in monthly_metrics:
+        monthly_metrics[key] = {"Total Price":0, "Owner Profit":0, "Total Expenses":0}
+    monthly_metrics[key]["Total Expenses"] += parse_amount(row[
