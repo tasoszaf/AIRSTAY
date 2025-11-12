@@ -385,21 +385,25 @@ with st.form("add_expense_form"):
         st.experimental_rerun()
 
 # -------------------------------------------------------------
-# Προσθήκη εξόδων στα metrics ανά μήνα για το επιλεγμένο group
+# Metrics ανά μήνα (κρατήσεις)
 # -------------------------------------------------------------
-def parse_amount(v):
-    try:
-        return float(v)
-    except:
-        return 0.0
+monthly_metrics = defaultdict(lambda: {"Total Price":0, "Owner Profit":0, "Total Expenses":0})
 
-# Ενημέρωση metrics με τα έξοδα
+for idx, row in filtered_df.iterrows():
+    key = (row["Year"], row["Month"])
+    monthly_metrics[key]["Total Price"] += row["Total Price"]
+    monthly_metrics[key]["Owner Profit"] += row["Owner Profit"]
+
+# -------------------------------------------------------------
+# Προσθήκη εξόδων στα metrics (χωρίς Date)
+# -------------------------------------------------------------
 for idx, row in expenses_df.iterrows():
     if row["Accommodation"].upper() != selected_group.upper():
         continue
-    month = int(row["Month"])
-    year = int(row["Year"])
-    key = (year, month)
+    key = (row["Year"], row["Month"])
     if key not in monthly_metrics:
         monthly_metrics[key] = {"Total Price":0, "Owner Profit":0, "Total Expenses":0}
-    monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
+    try:
+        monthly_metrics[key]["Total Expenses"] += float(row["Amount"])
+    except:
+        pass
