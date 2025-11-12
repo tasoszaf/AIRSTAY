@@ -402,4 +402,4 @@ for idx, row in expenses_df.iterrows():
     key = (year, month)
     if key not in monthly_metrics:
         monthly_metrics[key] = {"Total Price":0, "Owner Profit":0, "Total Expenses":0}
-    monthly_metrics[key]["Total Expenses"] += parse_amount(row[
+    monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
