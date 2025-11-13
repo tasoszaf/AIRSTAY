@@ -129,8 +129,6 @@ for idx, row in filtered_df.iterrows():
     days_total = row["Days"]
     if days_total == 0:
         continue
-    price_per_day = row["Total Price"] / days_total
-    owner_profit_per_day = row["Owner Profit"] / days_total
     month = row["Month"]
     year = row["Year"]
     key = (year, month)
@@ -218,6 +216,7 @@ with st.form("add_expense_form"):
     submitted = st.form_submit_button("💾 Αποθήκευση εξόδου", use_container_width=True)
 
     if submitted:
+        # Αποθήκευση στο Excel
         new_expense = pd.DataFrame([{
             "ID": len(expenses_df) + 1,
             "Month": exp_month,
@@ -231,5 +230,28 @@ with st.form("add_expense_form"):
         expenses_df.to_excel(EXPENSES_FILE, index=False)
         st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς.")
 
-        # Καθαρισμός πεδίων μέσω rerun (χωρίς άμεσο set στο session_state)
-        st.rerun()
+        # -------------------------------------------------------------
+        # 🔄 Ανέβασμα του expenses.xlsx στο GitHub (πάντα)
+        # -------------------------------------------------------------
+        try:
+            GITHUB_TOKEN = st.secrets["github"]["token"]
+            GITHUB_USER = st.secrets["github"]["username"]
+            GITHUB_REPO = st.secrets["github"]["repo"]
+
+            FILE_PATH = "expenses.xlsx"
+
+            g = Github(GITHUB_TOKEN)
+            repo = g.get_user(GITHUB_USER).get_repo(GITHUB_REPO)
+
+            with open(EXPENSES_FILE, "rb") as f:
+                content = f.read()
+
+            try:
+                contents = repo.get_contents(FILE_PATH, ref="main")
+                repo.update_file(FILE_PATH, "🔁 Update expenses.xlsx", content, contents.sha, branch="main")
+            except Exception:
+                repo.create_file(FILE_PATH, "🆕 Add expenses.xlsx", content, branch="main")
+
+            st.success("✅ Το αρχείο **expenses.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
+        except Exception as e:
+            st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
