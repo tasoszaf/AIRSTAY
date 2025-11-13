@@ -232,4 +232,4 @@ with st.form("add_expense_form"):
         st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς.")
 
         # Καθαρισμός πεδίων μέσω rerun (χωρίς άμεσο set στο session_state)
-        st.experimental_rerun()
+        st.rerun()
