@@ -153,9 +153,9 @@ monthly_table = pd.DataFrame([
     {
         "Έτος": year,
         "Μήνας": months_el[month],
-        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}".replace(",", "."),
-        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}".replace(",", "."),
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}".replace(",", ".")
+        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
+        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
     }
     for (year, month), v in sorted(monthly_metrics.items())
 ])
