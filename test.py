@@ -256,7 +256,7 @@ for idx, row in filtered_df.iterrows():
     monthly_metrics[key]["Owner Profit"] += safe_float(row.get("Owner Profit"))
 
 for idx, row in expenses_df.iterrows():
-    if row["Accommodation"].upper() != selected_group.upper():
+    if str(row["Accommodation"]).upper() != selected_group.upper():
         continue
     key = (int(row["Year"]), int(row["Month"]))
     monthly_metrics[key]["Total Expenses"] += safe_float(row.get("Amount"))
