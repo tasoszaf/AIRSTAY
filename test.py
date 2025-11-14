@@ -86,7 +86,7 @@ APARTMENT_SETTINGS = {
     "ELISE": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248, "booking_com_commission":0.166},
     "ORIANNA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248}, "booking_com_commission":0.216},
     "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0, "booking_com_commission":0.166},
-    "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_com_commission":0.166},
+    "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_com_commission":0.166}
 }
 
 # -------------------------------------------------------------
