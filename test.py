@@ -122,20 +122,36 @@ months_el = {
     7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
 }
 
-monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
+# -------------------------------------------------------------
+# Metrics ανά μήνα με επιμερισμό κρατήσεων ανά μήνα
+# -------------------------------------------------------------
+monthly_metrics = defaultdict(lambda: {"Total Price": 0, "Total Expenses": 0, "Owner Profit": 0})
 
-# Συνολική τιμή και owner profit από κρατήσεις
 for idx, row in filtered_df.iterrows():
-    days_total = row["Days"]
-    if days_total == 0:
+    checkin = pd.to_datetime(row["Arrival"])
+    checkout = pd.to_datetime(row["Departure"])
+    total_days = (checkout - checkin).days
+    if total_days == 0:
         continue
-    month = row["Month"]
-    year = row["Year"]
-    key = (year, month)
-    monthly_metrics[key]["Total Price"] += row["Total Price"]
-    monthly_metrics[key]["Owner Profit"] += row["Owner Profit"]
 
-# Προσθήκη εξόδων αθροιστικά
+    daily_price = row["Total Price"] / total_days
+    daily_profit = row["Owner Profit"] / total_days
+
+    current_day = checkin
+    while current_day < checkout:
+        year, month = current_day.year, current_day.month
+        # Υπολογισμός επόμενης πρώτης μέρας του μήνα
+        next_month = (current_day.replace(day=28) + timedelta(days=4)).replace(day=1)
+        days_in_month = (min(checkout, next_month) - current_day).days
+
+        monthly_metrics[(year, month)]["Total Price"] += daily_price * days_in_month
+        monthly_metrics[(year, month)]["Owner Profit"] += daily_profit * days_in_month
+
+        current_day = next_month
+
+# -------------------------------------------------------------
+# Προσθήκη εξόδων ανά μήνα
+# -------------------------------------------------------------
 def parse_amount(v):
     try:
         return float(v)
@@ -148,7 +164,9 @@ for idx, row in expenses_df.iterrows():
     key = (int(row["Year"]), int(row["Month"]))
     monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
 
-# Δημιουργία πίνακα metrics
+# -------------------------------------------------------------
+# Δημιουργία πίνακα για Streamlit
+# -------------------------------------------------------------
 monthly_table = pd.DataFrame([
     {
         "Έτος": year,
@@ -159,6 +177,7 @@ monthly_table = pd.DataFrame([
     }
     for (year, month), v in sorted(monthly_metrics.items())
 ])
+
 
 # -------------------------------------------------------------
 # Εμφάνιση metrics πάνω-πάνω
