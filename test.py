@@ -90,55 +90,6 @@ APARTMENT_SETTINGS = {
 }
 
 # -------------------------------------------------------------
-# Συναρτήσεις Υπολογισμών
-# -------------------------------------------------------------
-def calculate_booking_fee(row):
-    month = int(row["Month"])
-    platform = str(row["Platform"]).upper()
-    total_price = float(row["Total Price"])
-    days = float(row["Days"])
-    group = row["Group"]
-
-    winter_months = {1, 2, 3, 11, 12}
-    base = APARTMENT_SETTINGS[group]["winter_base"] if month in winter_months else APARTMENT_SETTINGS[group]["summer_base"]
-
-    if "BOOKING" in platform:
-        rate = APARTMENT_SETTINGS[group]["booking_com_commission"]
-        return ((total_price - base * days)/1.005)*rate
-    elif "AIRBNB" in platform:
-        return total_price * 0.15
-    elif "EXPEDIA" in platform:
-        return total_price * 0.18
-    else:
-        return 0.0
-
-def calculate_price_without_tax(row):
-    month = int(row["Month"])
-    platform = str(row["Platform"]).upper()
-    total_price = float(row["Total Price"])
-    days = float(row["Days"])
-    group = row["Group"]
-
-    winter_months = {1,2,3,11,12}
-    base = APARTMENT_SETTINGS[group]["winter_base"] if month in winter_months else APARTMENT_SETTINGS[group]["summer_base"]
-
-    if "EXPEDIA" in platform:
-        net_price = (total_price * 0.82) - base * days
-        return (net_price / 1.13) - (net_price * 0.005) + (total_price * 0.18)
-    else:
-        net_price = total_price - base * days
-        return (net_price / 1.13) - (net_price * 0.005)
-
-def calculate_airstay_commission(row):
-    group = row["Group"]
-    rate = APARTMENT_SETTINGS[group]["airstay_commission"]
-    return row["Price Without Tax"] * rate
-
-def calculate_owner_profit(row):
-    return row["Price Without Tax"] - row["Booking Fee"] - row["Airstay Commission"]
-
-
-# -------------------------------------------------------------
 # Φόρτωση Excel
 # -------------------------------------------------------------
 try:
@@ -152,18 +103,88 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["ID","Month","Year","Accommodation","Category","Amount","Description"])
 
 # -------------------------------------------------------------
-# Φόρτωση νέων κρατήσεων από API
+# Φόρτωση νέων κρατήσεων από API (paginated)
 # -------------------------------------------------------------
-response = requests.get(reservations_url, headers=headers, params={"from": from_date, "to": to_date})
-new_reservations = pd.DataFrame(response.json())
+all_bookings = []
+page = 1
+while True:
+    params = {
+        "from": from_date,
+        "to": to_date,
+        "page": page,
+        "pageSize": 100,
+        "includePriceElements": True
+    }
+    response = requests.get(reservations_url, headers=headers, params=params)
+    if response.status_code != 200:
+        st.error(f"API error {response.status_code}: {response.text}")
+        break
 
-if not new_reservations.empty:
-    reservations_df = pd.concat([reservations_df, new_reservations], ignore_index=True)
+    data = response.json()
+    bookings = data.get("bookings", [])
+    if not bookings:
+        break
 
-# ----------------------------
-# Εξασφάλιση στηλών και υπολογισμοί
-# ----------------------------
-for col in ["Booking Fee", "Price Without Tax", "Airstay Commission", "Owner Profit"]:
+    all_bookings.extend(bookings)
+    if page >= data.get("page_count", 0):
+        break
+    page += 1
+
+if all_bookings:
+    new_reservations_df = pd.DataFrame(all_bookings)
+    reservations_df = pd.concat([reservations_df, new_reservations_df], ignore_index=True)
+    st.success(f"Φορτώθηκαν {len(new_reservations_df)} νέες κρατήσεις.")
+
+# -------------------------------------------------------------
+# Υπολογισμοί στηλών
+# -------------------------------------------------------------
+def calculate_booking_fee(row):
+    month = int(row.get("Month", pd.to_datetime(row.get("arrival")).month))
+    platform = str(row.get("channel.name","")).upper()
+    total_price = float(row.get("price", 0))
+    days = (pd.to_datetime(row.get("departure")) - pd.to_datetime(row.get("arrival"))).days
+    group = row.get("apartment.name", "UNKNOWN")
+
+    winter_months = {1,2,3,11,12}
+    base = APARTMENT_SETTINGS.get(group, {}).get("winter_base" if month in winter_months else "summer_base", 0)
+    booking_com_comm = APARTMENT_SETTINGS.get(group, {}).get("booking_com_commission", 0)
+
+    if "BOOKING" in platform:
+        return ((total_price - base * days)/1.005) * booking_com_comm
+    elif "AIRBNB" in platform:
+        return total_price * 0.15
+    elif "EXPEDIA" in platform:
+        return total_price * 0.18
+    else:
+        return 0.0
+
+def calculate_price_without_tax(row):
+    month = int(row.get("Month", pd.to_datetime(row.get("arrival")).month))
+    platform = str(row.get("channel.name","")).upper()
+    total_price = float(row.get("price",0))
+    days = (pd.to_datetime(row.get("departure")) - pd.to_datetime(row.get("arrival"))).days
+    group = row.get("apartment.name", "UNKNOWN")
+
+    winter_months = {1,2,3,11,12}
+    base = APARTMENT_SETTINGS.get(group, {}).get("winter_base" if month in winter_months else "summer_base", 0)
+
+    if "EXPEDIA" in platform:
+        net_price = (total_price * 0.82) - base * days
+        return (net_price / 1.13) - (net_price * 0.005) + (total_price * 0.18)
+    else:
+        net_price = total_price - base * days
+        return (net_price / 1.13) - (net_price * 0.005)
+
+def calculate_airstay_commission(row):
+    group = row.get("apartment.name", "UNKNOWN")
+    rate = APARTMENT_SETTINGS.get(group, {}).get("airstay_commission", 0)
+    return row["Price Without Tax"] * rate
+
+def calculate_owner_profit(row):
+    return row["Price Without Tax"] - row["Booking Fee"] - row["Airstay Commission"]
+
+# Δημιουργία στηλών αν δεν υπάρχουν
+for col in ["Booking Fee","Price Without Tax","Airstay Commission","Owner Profit"]:
     if col not in reservations_df.columns:
         reservations_df[col] = 0.0
 
@@ -172,51 +193,41 @@ reservations_df["Price Without Tax"] = reservations_df.apply(calculate_price_wit
 reservations_df["Airstay Commission"] = reservations_df.apply(calculate_airstay_commission, axis=1)
 reservations_df["Owner Profit"] = reservations_df.apply(calculate_owner_profit, axis=1)
 
-# ----------------------------
-# Αποθήκευση πίσω στο Excel
-# ----------------------------
-reservations_df.to_excel(RESERVATIONS_FILE, index=False)
+# -------------------------------------------------------------
+# Αποθήκευση στο Excel (μόνο save_and_show)
+# -------------------------------------------------------------
+if FETCH_MODE == "save_and_show":
+    reservations_df.to_excel(RESERVATIONS_FILE, index=False)
 
 # -------------------------------------------------------------
 # Sidebar & Φιλτράρισμα
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
-selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-filtered_df = reservations_df[reservations_df["Group"]==selected_group].copy()
-filtered_df = filtered_df.sort_values(["Arrival"]).reset_index(drop=True)
+apartments = reservations_df["apartment.name"].unique() if not reservations_df.empty else []
+selected_group = st.sidebar.selectbox("Κατάλυμα", apartments)
+filtered_df = reservations_df[reservations_df["apartment.name"]==selected_group].copy()
+filtered_df = filtered_df.sort_values("arrival").reset_index(drop=True)
 
 # -------------------------------------------------------------
 # Metrics ανά μήνα
 # -------------------------------------------------------------
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
+months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
 
 monthly_metrics = defaultdict(lambda: {"Total Price":0, "Total Expenses":0, "Owner Profit":0})
 
 for idx, row in filtered_df.iterrows():
-    days_total = row.get("Days", 0)
-    if days_total == 0:
-        continue
-    month = row["Month"]
-    year = row["Year"]
+    month = pd.to_datetime(row["arrival"]).month
+    year = pd.to_datetime(row["arrival"]).year
     key = (year, month)
-    monthly_metrics[key]["Total Price"] += row["Total Price"]
+    monthly_metrics[key]["Total Price"] += row["price"]
     monthly_metrics[key]["Owner Profit"] += row["Owner Profit"]
-
-# Προσθήκη εξόδων
-def parse_amount(v):
-    try:
-        return float(v)
-    except:
-        return 0.0
 
 for idx, row in expenses_df.iterrows():
     if row["Accommodation"].upper() != selected_group.upper():
         continue
     key = (int(row["Year"]), int(row["Month"]))
-    monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
+    monthly_metrics[key]["Total Expenses"] += float(row["Amount"])
 
 monthly_table = pd.DataFrame([
     {
@@ -232,13 +243,9 @@ monthly_table = pd.DataFrame([
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
 st.dataframe(monthly_table, width="stretch", hide_index=True)
 
-# -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
-# -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(filtered_df[[
-    "ID","Apartment_ID","Group","Arrival","Departure","Days",
-    "Platform","Guests","Total Price","Booking Fee",
+    "id","apartment.id","apartment.name","arrival","departure","price","Booking Fee",
     "Price Without Tax","Airstay Commission","Owner Profit"
 ]], width="stretch", hide_index=True)
 
