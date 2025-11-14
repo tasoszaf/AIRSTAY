@@ -107,145 +107,129 @@ except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["ID","Month","Year","Accommodation","Category","Amount","Description"])
 
 # -----------------------------
-# GitHub Upload Function
+# Helper Functions
 # -----------------------------
-def upload_to_github(file_path, commit_message):
+def safe_float(v):
     try:
-        GITHUB_TOKEN = st.secrets["github"]["token"]
-        GITHUB_USER = st.secrets["github"]["username"]
-        GITHUB_REPO = st.secrets["github"]["repo"]
-
-        g = Github(GITHUB_TOKEN)
-        repo = g.get_user(GITHUB_USER).get_repo(GITHUB_REPO)
-        file_name = os.path.basename(file_path)
-
-        with open(file_path, "rb") as f:
-            content = f.read()
-
-        try:
-            contents = repo.get_contents(file_name, ref="main")
-            repo.update_file(file_name, commit_message, content, contents.sha, branch="main")
-        except Exception:
-            repo.create_file(file_name, commit_message, content, branch="main")
-
-        st.success(f"✅ Το αρχείο **{file_name}** ενημερώθηκε στο GitHub.")
-    except Exception as e:
-        st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
-
-# -----------------------------
-# API Fetch (Paginated)
-# -----------------------------
-all_bookings = []
-page = 1
-while True:
-    params = {"from": from_date, "to": to_date, "page": page, "pageSize": 100, "includePriceElements": True}
-    response = requests.get(reservations_url, headers=headers, params=params)
-    if response.status_code != 200:
-        st.warning(f"API Error {response.status_code}")
-        break
-    data = response.json()
-    bookings = data.get("bookings", [])
-    if not bookings:
-        break
-    all_bookings.extend(bookings)
-    if page >= data.get("page_count", 0):
-        break
-    page += 1
-
-def map_booking_to_excel(b):
-    arrival = pd.to_datetime(b.get("arrival"))
-    departure = pd.to_datetime(b.get("departure"))
-    days = (departure - arrival).days if arrival and departure else 0
-    return {
-        "ID": b.get("id"),
-        "Apartment_ID": b.get("apartment", {}).get("id"),
-        "Group": b.get("apartment", {}).get("name"),
-        "Guest Name": b.get("guest-name"),
-        "Arrival": arrival,
-        "Departure": departure,
-        "Days": days,
-        "Platform": b.get("channel", {}).get("name"),
-        "Guests": b.get("adults",0)+b.get("children",0),
-        "Total Price": b.get("price",0),
-        "Month": arrival.month if arrival else 0,
-        "Year": arrival.year if arrival else 0
-    }
-
-if all_bookings:
-    new_reservations_df = pd.DataFrame([map_booking_to_excel(b) for b in all_bookings])
-    reservations_df = pd.concat([reservations_df, new_reservations_df], ignore_index=True)
-    st.success(f"Φορτώθηκαν {len(new_reservations_df)} νέες κρατήσεις.")
-
-# -----------------------------
-# Financial Calculations
-# -----------------------------
-def safe_float(x, default=0.0):
-    try: return float(x)
-    except: return default
+        return float(v)
+    except:
+        return 0.0
 
 def calculate_booking_fee(row):
-    try:
-        month = int(row.get("Month") or pd.to_datetime(row.get("Arrival")).month)
-        platform = str(row.get("Platform","")).upper()
-        total_price = safe_float(row.get("Total Price"))
-        days = safe_float(row.get("Days"))
-        group = row.get("Group", "UNKNOWN")
-        winter_months = {1,2,3,11,12}
-        base = APARTMENT_SETTINGS.get(group, {}).get("winter_base" if month in winter_months else "summer_base", 0)
-        booking_com_comm = APARTMENT_SETTINGS.get(group, {}).get("booking_com_commission", 0)
-        if "BOOKING" in platform:
-            return ((total_price - base * days)/1.005) * booking_com_comm
-        elif "AIRBNB" in platform:
-            return total_price * 0.15
-        elif "EXPEDIA" in platform:
-            return total_price * 0.18
-        else:
-            return 0.0
-    except: return 0.0
+    settings = APARTMENT_SETTINGS.get(row["Group"], {})
+    winter_base = settings.get("winter_base", 0)
+    summer_base = settings.get("summer_base", 0)
+    booking_com_comm = settings.get("booking_com_commission", 0)
+
+    month = int(row["Month"])
+    total_price = row["Total Price"]
+    platform = str(row["Platform"]).upper()
+
+    base = winter_base if month in [1,2,3,11,12] else summer_base
+
+    if platform == "AIRBNB":
+        return total_price * 0.15
+    elif platform == "EXPEDIA":
+        return total_price * 0.18
+    elif platform == "BOOKING":
+        return ((total_price - base*row["Days"])/1.005) * booking_com_comm
+    return 0
 
 def calculate_price_without_tax(row):
-    try:
-        month = int(row.get("Month") or pd.to_datetime(row.get("Arrival")).month)
-        platform = str(row.get("Platform","")).upper()
-        total_price = safe_float(row.get("Total Price"))
-        days = safe_float(row.get("Days"))
-        group = row.get("Group", "UNKNOWN")
-        winter_months = {1,2,3,11,12}
-        base = APARTMENT_SETTINGS.get(group, {}).get("winter_base" if month in winter_months else "summer_base", 0)
-        if "EXPEDIA" in platform:
-            net_price = (total_price * 0.82) - base * days
-            return (net_price / 1.13) - (net_price * 0.005) + (total_price * 0.18)
-        else:
-            net_price = total_price - base * days
-            return (net_price / 1.13) - (net_price * 0.005)
-    except: return 0.0
+    settings = APARTMENT_SETTINGS.get(row["Group"], {})
+    winter_base = settings.get("winter_base", 0)
+    summer_base = settings.get("summer_base", 0)
+
+    month = int(row["Month"])
+    total_price = row["Total Price"]
+
+    base = winter_base if month in [1,2,3,11,12] else summer_base
+    platform = str(row["Platform"]).upper()
+
+    if platform == "EXPEDIA":
+        return ((total_price*0.82 - base*row["Days"])/1.13 - (total_price*0.82 - base*row["Days"])*0.005 + total_price*0.18)
+    else:
+        return ((total_price - base*row["Days"])/1.13 - (total_price - base*row["Days"])*0.005)
 
 def calculate_airstay_commission(row):
-    try:
-        rate = APARTMENT_SETTINGS.get(row.get("Group","UNKNOWN"), {}).get("airstay_commission", 0)
-        return safe_float(row.get("Price Without Tax")) * rate
-    except: return 0.0
+    settings = APARTMENT_SETTINGS.get(row["Group"], {})
+    return row["Price Without Tax"] * settings.get("airstay_commission", 0)
 
 def calculate_owner_profit(row):
-    try:
-        return safe_float(row.get("Price Without Tax")) - safe_float(row.get("Booking Fee")) - safe_float(row.get("Airstay Commission"))
-    except: return 0.0
+    return row["Price Without Tax"] - row["Booking Fee"] - row["Airstay Commission"]
 
-# Initialize columns
-for col in ["Booking Fee","Price Without Tax","Airstay Commission","Owner Profit"]:
-    if col not in reservations_df.columns:
-        reservations_df[col] = 0.0
+# -----------------------------
+# Fetch κρατήσεων από Smoobu API
+# -----------------------------
+def fetch_smoobu_reservations():
+    all_bookings = []
+    for group, ids in APARTMENTS.items():
+        for apt_id in ids:
+            page = 1
+            while True:
+                params = {
+                    "from": from_date,
+                    "to": to_date,
+                    "apartmentId": apt_id,
+                    "includeRelated": True,
+                    "includePriceElements": True,
+                    "page": page,
+                    "pageSize": 100
+                }
+                try:
+                    response = requests.get(reservations_url, headers=headers, params=params, timeout=10)
+                    response.raise_for_status()
+                    data = response.json()
+                    bookings = data.get("bookings", [])
+                    if not bookings:
+                        break
+                    for b in bookings:
+                        arrival = b.get("arrival")
+                        departure = b.get("departure")
+                        days = (pd.to_datetime(departure) - pd.to_datetime(arrival)).days if arrival and departure else 0
+                        total_price = safe_float(b.get("price", 0))
+                        month = pd.to_datetime(arrival).month if arrival else 0
+                        year = pd.to_datetime(arrival).year if arrival else today.year
+                        platform = b.get("channel", {}).get("name", "").upper()
+                        all_bookings.append({
+                            "ID": b.get("id"),
+                            "Apartment_ID": apt_id,
+                            "Group": group,
+                            "Guest Name": b.get("guest-name"),
+                            "Arrival": arrival,
+                            "Departure": departure,
+                            "Days": days,
+                            "Platform": platform,
+                            "Guests": (safe_float(b.get("adults", 0)) + safe_float(b.get("children",0))),
+                            "Total Price": total_price,
+                            "Month": month,
+                            "Year": year
+                        })
+                    page += 1
+                    if page > data.get("page_count",1):
+                        break
+                except Exception as e:
+                    st.warning(f"⚠️ Σφάλμα κατά το fetch για {apt_id}: {e}")
+                    break
+    return pd.DataFrame(all_bookings)
 
-if not reservations_df.empty:
-    reservations_df["Booking Fee"] = reservations_df.apply(calculate_booking_fee, axis=1)
-    reservations_df["Price Without Tax"] = reservations_df.apply(calculate_price_without_tax, axis=1)
-    reservations_df["Airstay Commission"] = reservations_df.apply(calculate_airstay_commission, axis=1)
-    reservations_df["Owner Profit"] = reservations_df.apply(calculate_owner_profit, axis=1)
+# -----------------------------
+# Φόρτωση νέων κρατήσεων
+# -----------------------------
+if FETCH_MODE == "save_and_show":
+    st.info("📡 Φόρτωση νέων κρατήσεων από Smoobu...")
+    new_reservations = fetch_smoobu_reservations()
+    if not new_reservations.empty:
+        new_reservations["Booking Fee"] = new_reservations.apply(calculate_booking_fee, axis=1)
+        new_reservations["Price Without Tax"] = new_reservations.apply(calculate_price_without_tax, axis=1)
+        new_reservations["Airstay Commission"] = new_reservations.apply(calculate_airstay_commission, axis=1)
+        new_reservations["Owner Profit"] = new_reservations.apply(calculate_owner_profit, axis=1)
 
-# Save and upload reservations
-if FETCH_MODE=="save_and_show":
-    reservations_df.to_excel(RESERVATIONS_FILE, index=False)
-    upload_to_github(RESERVATIONS_FILE, "🔁 Update reservations.xlsx")
+        reservations_df = pd.concat([reservations_df, new_reservations], ignore_index=True)
+        reservations_df.drop_duplicates(subset=["ID"], inplace=True)
+        reservations_df.to_excel(RESERVATIONS_FILE, index=False)
+        st.success(f"✅ Ενημερώθηκαν {len(new_reservations)} νέες κρατήσεις στο reservations.xlsx")
+
 
 # -----------------------------
 # Sidebar & Filtering
