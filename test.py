@@ -26,8 +26,8 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Hardcoded Months Range
 # -------------------------------------------------------------
-START_MONTH = 9   # π.χ. Ιανουάριος
-END_MONTH = 10  # π.χ. Οκτώβριος
+START_MONTH = 5   # π.χ. Ιανουάριος
+END_MONTH = 6  # π.χ. Οκτώβριος
 
 today = date.today()
 from_date = date(today.year, START_MONTH, 1).strftime("%Y-%m-%d")
@@ -193,111 +193,112 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Main Flow
+# Fetch All Reservations
+# -------------------------------------------------------------
+df_new = fetch_reservations(from_date, to_date)
+df_new = calculate_columns(df_new)
+
+# -------------------------------------------------------------
+# Sidebar Dropdown for Group Selection
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-df_new = fetch_reservations(from_date, to_date)
-if df_new.empty:
-    st.warning("⚠️ Δεν υπάρχουν κρατήσεις ή το API απέτυχε.")
-else:
-    df_new = calculate_columns(df_new)
-    df_filtered = df_new[df_new["apartment.id"].isin(APARTMENTS[selected_group])]
+# Filter for selected group
+df_filtered = df_new[df_new["apartment.id"].isin(APARTMENTS[selected_group])]
 
-    # Κρατάμε μόνο τις απαραίτητες στήλες
-    columns_to_keep = [
-        "id", "apartment.id", "apartment.name", "channel.name",
-        "guest-name", "arrival", "departure",
-        "Guests",
-        "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
-    ]
-    df_filtered = df_filtered[columns_to_keep]
+# Keep only needed columns
+columns_to_keep = [
+    "id", "apartment.id", "apartment.name", "channel.name",
+    "guest-name", "arrival", "departure",
+    "Guests",
+    "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
+]
+df_filtered = df_filtered[columns_to_keep]
 
-    # -------------------------------------------------------------
-    # Metrics ανά μήνα
-    # -------------------------------------------------------------
-    monthly_metrics = defaultdict(lambda: {"Total Price": 0, "Total Expenses": 0, "Owner Profit": 0})
-    for idx, row in df_filtered.iterrows():
-        checkin = pd.to_datetime(row["arrival"])
-        checkout = pd.to_datetime(row["departure"])
-        total_days = (checkout - checkin).days
-        if total_days == 0:
-            continue
+# -------------------------------------------------------------
+# Metrics per month
+# -------------------------------------------------------------
+monthly_metrics = defaultdict(lambda: {"Total Price": 0, "Total Expenses": 0, "Owner Profit": 0})
+for idx, row in df_filtered.iterrows():
+    checkin = pd.to_datetime(row["arrival"])
+    checkout = pd.to_datetime(row["departure"])
+    total_days = (checkout - checkin).days
+    if total_days == 0:
+        continue
 
-        daily_price = row["Price Without Tax"] / total_days
-        daily_profit = row["Owner Profit"] / total_days
-        current_day = checkin
-        while current_day < checkout:
-            year, month = current_day.year, current_day.month
-            next_month_day = (current_day.replace(day=28) + timedelta(days=4)).replace(day=1)
-            days_in_month = (min(checkout, next_month_day) - current_day).days
+    daily_price = row["Price Without Tax"] / total_days
+    daily_profit = row["Owner Profit"] / total_days
+    current_day = checkin
+    while current_day < checkout:
+        year, month = current_day.year, current_day.month
+        next_month_day = (current_day.replace(day=28) + timedelta(days=4)).replace(day=1)
+        days_in_month = (min(checkout, next_month_day) - current_day).days
 
-            monthly_metrics[(year, month)]["Total Price"] += daily_price * days_in_month
-            monthly_metrics[(year, month)]["Owner Profit"] += daily_profit * days_in_month
+        monthly_metrics[(year, month)]["Total Price"] += daily_price * days_in_month
+        monthly_metrics[(year, month)]["Owner Profit"] += daily_profit * days_in_month
 
-            current_day = next_month_day
+        current_day = next_month_day
 
-    # Προσθήκη εξόδων ανά μήνα
-    for idx, row in expenses_df.iterrows():
-        if row["Accommodation"].upper() != selected_group.upper():
-            continue
-        key = (int(row["Year"]), int(row["Month"]))
-        monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
+# Add expenses
+for idx, row in expenses_df.iterrows():
+    if row["Accommodation"].upper() != selected_group.upper():
+        continue
+    key = (int(row["Year"]), int(row["Month"]))
+    monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
 
-    months_el = {
-        1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-        7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+months_el = {
+    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+}
+
+monthly_table = pd.DataFrame([
+    {
+        "Έτος": year,
+        "Μήνας": months_el[month],
+        "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
+        "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
     }
+    for (year, month), v in sorted(monthly_metrics.items())
+])
 
-    monthly_table = pd.DataFrame([
-        {
-            "Έτος": year,
-            "Μήνας": months_el[month],
-            "Συνολική Τιμή Κρατήσεων (€)": f"{v['Total Price']:.2f}",
-            "Συνολικά Έξοδα (€)": f"{v['Total Expenses']:.2f}",
-            "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{v['Owner Profit'] - v['Total Expenses']:.2f}"
-        }
-        for (year, month), v in sorted(monthly_metrics.items())
-    ])
+# -------------------------------------------------------------
+# Display in Streamlit
+# -------------------------------------------------------------
+st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
+st.dataframe(monthly_table, use_container_width=True)
 
-    # -------------------------------------------------------------
-    # Εμφάνιση στο Streamlit
-    # -------------------------------------------------------------
-    st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
-    st.dataframe(monthly_table, use_container_width=True)
+st.subheader(f"📅 Κρατήσεις ({selected_group})")
+st.dataframe(df_filtered, use_container_width=True)
 
-    st.subheader(f"📅 Κρατήσεις ({selected_group})")
-    st.dataframe(df_filtered, use_container_width=True)
+# -------------------------------------------------------------
+# Save to Excel
+# -------------------------------------------------------------
+df_filtered.to_excel(RESERVATIONS_FILE, index=False)
+st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE}")
 
-    # -------------------------------------------------------------
-    # Αποθήκευση Excel
-    # -------------------------------------------------------------
-    df_filtered.to_excel(RESERVATIONS_FILE, index=False)
-    st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE}")
+# -------------------------------------------------------------
+# Upload to GitHub
+# -------------------------------------------------------------
+try:
+    GITHUB_TOKEN = st.secrets["github"]["token"]
+    GITHUB_USER = st.secrets["github"]["username"]
+    GITHUB_REPO = st.secrets["github"]["repo"]
+    FILE_PATH = "reservations.xlsx"
 
-    # -------------------------------------------------------------
-    # Upload στο GitHub
-    # -------------------------------------------------------------
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_user(GITHUB_USER).get_repo(GITHUB_REPO)
+
+    with open(RESERVATIONS_FILE, "rb") as f:
+        content = f.read()
+
     try:
-        GITHUB_TOKEN = st.secrets["github"]["token"]
-        GITHUB_USER = st.secrets["github"]["username"]
-        GITHUB_REPO = st.secrets["github"]["repo"]
-        FILE_PATH = "reservations.xlsx"
+        contents = repo.get_contents(FILE_PATH, ref="main")
+        repo.update_file(FILE_PATH, "🔁 Update reservations.xlsx", content, contents.sha, branch="main")
+    except Exception:
+        repo.create_file(FILE_PATH, "🆕 Add reservations.xlsx", content, branch="main")
 
-        g = Github(GITHUB_TOKEN)
-        repo = g.get_user(GITHUB_USER).get_repo(GITHUB_REPO)
-
-        with open(RESERVATIONS_FILE, "rb") as f:
-            content = f.read()
-
-        try:
-            contents = repo.get_contents(FILE_PATH, ref="main")
-            repo.update_file(FILE_PATH, "🔁 Update reservations.xlsx", content, contents.sha, branch="main")
-        except Exception:
-            repo.create_file(FILE_PATH, "🆕 Add reservations.xlsx", content, branch="main")
-
-        st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
-    except Exception as e:
-        st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
-
+    st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
+except Exception as e:
+    st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
