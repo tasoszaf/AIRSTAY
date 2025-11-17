@@ -26,8 +26,8 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Hardcoded Months Range
 # -------------------------------------------------------------
-START_MONTH = 3   # π.χ. Ιανουάριος
-END_MONTH = 5    # π.χ. Οκτώβριος
+START_MONTH = 9   # π.χ. Ιανουάριος
+END_MONTH = 10  # π.χ. Οκτώβριος
 
 today = date.today()
 from_date = date(today.year, START_MONTH, 1).strftime("%Y-%m-%d")
@@ -89,6 +89,7 @@ def fetch_reservations(from_date, to_date):
         "from": from_date,
         "to": to_date,
         "includePriceElements": True,
+        "showCancellation": False,
         "page": 1,
         "pageSize": 100
     }
