@@ -71,102 +71,187 @@ APARTMENTS = {
 }
 
 APARTMENT_SETTINGS = {
-    "ZED": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    "NAMI": {"winter_base": 4, "summer_base": 15, "airstay_commission": 0},
-    "THRESH": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
-    "THRESH_A3": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    "THRESH_A4": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
-    "KALISTA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
-    "KOMOS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    "CHELI": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
-    "AKALI": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0},
-    "ZILEAN": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248},
-    "NAUTILUS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.186},
-    "ANIVIA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
-    "ELISE": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
-    "ORIANNA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248},
-    "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0},
-    "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0},
+    "ZED": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.216},
+    "NAMI": {"winter_base": 4, "summer_base": 15, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.166},
+    "THRESH": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248, "booking_fee_other": 0, "booking_fee": 0.166},
+    "THRESH_A3": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.166},
+    "THRESH_A4": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248, "booking_fee_other": 0, "booking_fee": 0.166},
+    "KALISTA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248, "booking_fee_other": 0, "booking_fee": 0.166},
+    "KOMOS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.216},
+    "CHELI": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.216},
+    "AKALI": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.166},
+    "ZILEAN": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.248, "booking_fee_other": 0.10, "booking_fee": 0.166},
+    "NAUTILUS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0.186, "booking_fee_other": 0, "booking_fee": 0.216},
+    "ANIVIA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248, "booking_fee_other": 0, "booking_fee": 0.166},
+    "ELISE": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248, "booking_fee_other": 0, "booking_fee": 0.166},
+    "ORIANNA": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.248, "booking_fee_other": 0, "booking_fee": 0.216},
+    "JAAX": {"winter_base": 2, "summer_base": 8, "airstay_commission": 0.0, "booking_fee_other": 0, "booking_fee": 0.166},
+    "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.166},
 }
 
 # -------------------------------------------------------------
-# Φόρτωση Excel
+# Sidebar: Επιλογή μήνα/καταλύματος
 # -------------------------------------------------------------
-try:
-    reservations_df = pd.read_excel(RESERVATIONS_FILE)
-except FileNotFoundError:
-    reservations_df = pd.DataFrame(columns=[
-        "ID","Apartment_ID","Group","Guest Name","Arrival","Departure","Days",
-        "Platform","Guests","Total Price","Booking Fee",
-        "Price Without Tax","Airstay Commission","Owner Profit","Month","Year"
-    ])
+st.sidebar.header("🏠 Επιλογή Καταλύματος")
+selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
+st.sidebar.header("📅 Επιλογή Μηνών")
+start_month = st.sidebar.number_input("Από μήνα", min_value=1, max_value=12, value=1)
+end_month = st.sidebar.number_input("Έως μήνα", min_value=1, max_value=12, value=date.today().month)
+
+# -------------------------------------------------------------
+# Fetch Reservations
+# -------------------------------------------------------------
+def fetch_reservations(from_date, to_date):
+    params = {"dateFrom": from_date, "dateTo": to_date}
+    r = requests.get(reservations_url, headers=headers, params=params)
+    if r.status_code != 200:
+        st.error(f"Σφάλμα API: {r.status_code}")
+        return pd.DataFrame()
+    data = r.json()
+    df = pd.DataFrame(data)
+    return df
+
+# -------------------------------------------------------------
+# Helper Functions
+# -------------------------------------------------------------
+def get_group_by_apartment(apt_id):
+    for g, apt_list in APARTMENTS.items():
+        if apt_id in apt_list:
+            return g
+    return None
+
+def calculate_price_without_tax(row):
+    price = float(row.get("price", 0))
+    nights = float(row.get("numberOfNights", 0))
+    month = int(row.get("month", 0))
+    platform = str(row.get("platform", "")).upper()
+    winter_months = [1, 2, 3, 11, 12]
+
+    apartment_id = row.get("apartmentId")
+    group = get_group_by_apartment(apartment_id)
+    if not group:
+        return 0.0
+
+    winter_base = APARTMENT_SETTINGS[group]["winter_base"]
+    summer_base = APARTMENT_SETTINGS[group]["summer_base"]
+    base = winter_base if month in winter_months else summer_base
+
+    if platform == "EXPEDIA":
+        adjusted = (price * 0.82) - (base * nights)
+        result = (adjusted / 1.13) - (adjusted * 0.005) + (price * 0.18)
+        return result
+
+    adjusted = price - (base * nights)
+    result = (adjusted / 1.13) - (adjusted * 0.005)
+    return result
+
+def get_booking_fee(row):
+    platform = str(row.get("platform", "")).lower()
+    total = float(row.get("price", 0))
+    apartment_id = row.get("apartmentId")
+    group = get_group_by_apartment(apartment_id)
+    if not group:
+        return 0.0
+
+    settings = APARTMENT_SETTINGS[group]
+
+    if "booking" in platform:
+        return total * settings.get("booking_fee", 0.166)
+    if "airbnb" in platform:
+        return total * 0.15
+    if "expedia" in platform:
+        return total * 0.18
+
+    return total * settings.get("booking_fee_other", 0.0)
+
+def calculate_airstay_commission(row):
+    price_without_tax = row.get("Price Without Tax", 0)
+    apartment_id = row.get("apartmentId")
+    group = get_group_by_apartment(apartment_id)
+    if not group:
+        return 0.0
+    rate = APARTMENT_SETTINGS[group].get("airstay_commission", 0.0)
+    return price_without_tax * rate
+
+def calculate_columns(df):
+    if df.empty:
+        return df
+
+    df["Price Without Tax"] = df.apply(calculate_price_without_tax, axis=1)
+    df["Booking Fee"] = df.apply(get_booking_fee, axis=1)
+    df["Airstay Commission"] = df.apply(calculate_airstay_commission, axis=1)
+    df["Owner Profit"] = df["Price Without Tax"] - df["Booking Fee"] - df["Airstay Commission"]
+
+    return df
+
+# -------------------------------------------------------------
+# Load Expenses
+# -------------------------------------------------------------
 try:
     expenses_df = pd.read_excel(EXPENSES_FILE)
 except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["ID","Month","Year","Accommodation","Category","Amount","Description"])
 
-# -------------------------------------------------------------
-# Sidebar & Φιλτράρισμα
-# -------------------------------------------------------------
-st.sidebar.header("🏠 Επιλογή Καταλύματος")
-selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-filtered_df = reservations_df[reservations_df["Group"]==selected_group].copy()
-filtered_df = filtered_df.sort_values(["Arrival"]).reset_index(drop=True)
-
-# -------------------------------------------------------------
-# Metrics ανά μήνα
-# -------------------------------------------------------------
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
-
-# -------------------------------------------------------------
-# Metrics ανά μήνα με επιμερισμό κρατήσεων ανά μήνα
-# -------------------------------------------------------------
-monthly_metrics = defaultdict(lambda: {"Total Price": 0, "Total Expenses": 0, "Owner Profit": 0})
-
-for idx, row in filtered_df.iterrows():
-    checkin = pd.to_datetime(row["Arrival"])
-    checkout = pd.to_datetime(row["Departure"])
-    total_days = (checkout - checkin).days
-    if total_days == 0:
-        continue
-
-    daily_price = row["Total Price"] / total_days
-    daily_profit = row["Owner Profit"] / total_days
-
-    current_day = checkin
-    while current_day < checkout:
-        year, month = current_day.year, current_day.month
-        # Υπολογισμός επόμενης πρώτης μέρας του μήνα
-        next_month = (current_day.replace(day=28) + timedelta(days=4)).replace(day=1)
-        days_in_month = (min(checkout, next_month) - current_day).days
-
-        monthly_metrics[(year, month)]["Total Price"] += daily_price * days_in_month
-        monthly_metrics[(year, month)]["Owner Profit"] += daily_profit * days_in_month
-
-        current_day = next_month
-
-# -------------------------------------------------------------
-# Προσθήκη εξόδων ανά μήνα
-# -------------------------------------------------------------
 def parse_amount(v):
     try:
         return float(v)
     except:
         return 0.0
 
+# -------------------------------------------------------------
+# Main Flow
+# -------------------------------------------------------------
+today = date.today()
+from_date = date(today.year, start_month, 1).strftime("%Y-%m-%d")
+next_month = date(today.year, end_month, 28) + timedelta(days=4)
+last_day = (next_month - timedelta(days=next_month.day)).day
+to_date = date(today.year, end_month, last_day).strftime("%Y-%m-%d")
+
+df_new = fetch_reservations(from_date, to_date)
+df_new = calculate_columns(df_new)
+
+# Φιλτράρισμα ανά group
+df_filtered = df_new[df_new["apartmentId"].isin(APARTMENTS[selected_group])]
+
+# -------------------------------------------------------------
+# Metrics ανά μήνα
+# -------------------------------------------------------------
+monthly_metrics = defaultdict(lambda: {"Total Price": 0, "Total Expenses": 0, "Owner Profit": 0})
+
+for idx, row in df_filtered.iterrows():
+    checkin = pd.to_datetime(row.get("arrivalDate", today))
+    checkout = pd.to_datetime(row.get("departureDate", today))
+    total_days = (checkout - checkin).days
+    if total_days == 0:
+        continue
+
+    daily_price = row["Price Without Tax"] / total_days
+    daily_profit = row["Owner Profit"] / total_days
+
+    current_day = checkin
+    while current_day < checkout:
+        year, month = current_day.year, current_day.month
+        next_month_day = (current_day.replace(day=28) + timedelta(days=4)).replace(day=1)
+        days_in_month = (min(checkout, next_month_day) - current_day).days
+
+        monthly_metrics[(year, month)]["Total Price"] += daily_price * days_in_month
+        monthly_metrics[(year, month)]["Owner Profit"] += daily_profit * days_in_month
+
+        current_day = next_month_day
+
+# Προσθήκη εξόδων ανά μήνα
 for idx, row in expenses_df.iterrows():
     if row["Accommodation"].upper() != selected_group.upper():
         continue
     key = (int(row["Year"]), int(row["Month"]))
     monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
 
-# -------------------------------------------------------------
-# Δημιουργία πίνακα για Streamlit
-# -------------------------------------------------------------
+months_el = {
+    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
+}
+
 monthly_table = pd.DataFrame([
     {
         "Έτος": year,
@@ -178,99 +263,42 @@ monthly_table = pd.DataFrame([
     for (year, month), v in sorted(monthly_metrics.items())
 ])
 
-
 # -------------------------------------------------------------
-# Εμφάνιση metrics πάνω-πάνω
+# Εμφάνιση στο Streamlit
 # -------------------------------------------------------------
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
-st.dataframe(monthly_table, width="stretch", hide_index=True)
+st.dataframe(monthly_table, use_container_width=True)
 
-# -------------------------------------------------------------
-# Εμφάνιση κρατήσεων
-# -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
-st.dataframe(filtered_df[[
-    "ID","Apartment_ID","Group","Arrival","Departure","Days",
-    "Platform","Guests","Total Price","Booking Fee",
-    "Price Without Tax","Airstay Commission","Owner Profit"
-]], width="stretch", hide_index=True)
+st.dataframe(df_filtered, use_container_width=True)
 
 # -------------------------------------------------------------
-# 💰 Έξοδα για το επιλεγμένο group (χωρίς Date)
+# Αποθήκευση σε Excel
 # -------------------------------------------------------------
-group_expenses = expenses_df[expenses_df["Accommodation"].str.upper() == selected_group.upper()].copy()
-group_expenses = group_expenses.sort_values(["Year","Month"], ascending=[False,False]).reset_index(drop=True)
-
-st.subheader(f"💰 Έξοδα για {selected_group}")
-if group_expenses.empty:
-    st.info("Δεν υπάρχουν ακόμη έξοδα για αυτό το group.")
-else:
-    st.dataframe(
-        group_expenses[["Month","Year","Accommodation","Category","Amount","Description"]],
-        width=700,
-        hide_index=True
-    )
+df_filtered.to_excel(RESERVATIONS_FILE, index=False)
+st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE}")
 
 # -------------------------------------------------------------
-# ➕ Φόρμα προσθήκης νέου εξόδου
+# Upload στο GitHub
 # -------------------------------------------------------------
-st.subheader("➕ Προσθήκη νέου εξόδου")
+try:
+    GITHUB_TOKEN = st.secrets["github"]["token"]
+    GITHUB_USER = st.secrets["github"]["username"]
+    GITHUB_REPO = st.secrets["github"]["repo"]
+    FILE_PATH = "reservations.xlsx"
 
-# Αρχικοποίηση default values στο session_state (αν δεν υπάρχουν)
-if "exp_month_select" not in st.session_state:
-    st.session_state["exp_month_select"] = today.month
-if "exp_category_input" not in st.session_state:
-    st.session_state["exp_category_input"] = ""
-if "exp_amount_input" not in st.session_state:
-    st.session_state["exp_amount_input"] = 0.0
-if "exp_description_input" not in st.session_state:
-    st.session_state["exp_description_input"] = ""
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_user(GITHUB_USER).get_repo(GITHUB_REPO)
 
-with st.form("add_expense_form"):
-    exp_month = st.selectbox("Μήνας", list(range(1, 13)), index=st.session_state["exp_month_select"]-1, key="exp_month_select")
-    exp_category = st.text_input("Κατηγορία", value=st.session_state["exp_category_input"], key="exp_category_input")
-    exp_amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f", value=st.session_state["exp_amount_input"], key="exp_amount_input")
-    exp_description = st.text_area("Περιγραφή", value=st.session_state["exp_description_input"], key="exp_description_input")
+    with open(RESERVATIONS_FILE, "rb") as f:
+        content = f.read()
 
-    submitted = st.form_submit_button("💾 Αποθήκευση εξόδου", use_container_width=True)
+    try:
+        contents = repo.get_contents(FILE_PATH, ref="main")
+        repo.update_file(FILE_PATH, "🔁 Update reservations.xlsx", content, contents.sha, branch="main")
+    except Exception:
+        repo.create_file(FILE_PATH, "🆕 Add reservations.xlsx", content, branch="main")
 
-    if submitted:
-        # Αποθήκευση στο Excel
-        new_expense = pd.DataFrame([{
-            "ID": len(expenses_df) + 1,
-            "Month": exp_month,
-            "Year": today.year,
-            "Accommodation": selected_group,
-            "Category": exp_category,
-            "Amount": exp_amount,
-            "Description": exp_description
-        }])
-        expenses_df = pd.concat([expenses_df, new_expense], ignore_index=True)
-        expenses_df.to_excel(EXPENSES_FILE, index=False)
-        st.success("✅ Το έξοδο αποθηκεύτηκε επιτυχώς.")
-
-        # -------------------------------------------------------------
-        # 🔄 Ανέβασμα του expenses.xlsx στο GitHub (πάντα)
-        # -------------------------------------------------------------
-        try:
-            GITHUB_TOKEN = st.secrets["github"]["token"]
-            GITHUB_USER = st.secrets["github"]["username"]
-            GITHUB_REPO = st.secrets["github"]["repo"]
-
-            FILE_PATH = "expenses.xlsx"
-
-            g = Github(GITHUB_TOKEN)
-            repo = g.get_user(GITHUB_USER).get_repo(GITHUB_REPO)
-
-            with open(EXPENSES_FILE, "rb") as f:
-                content = f.read()
-
-            try:
-                contents = repo.get_contents(FILE_PATH, ref="main")
-                repo.update_file(FILE_PATH, "🔁 Update expenses.xlsx", content, contents.sha, branch="main")
-            except Exception:
-                repo.create_file(FILE_PATH, "🆕 Add expenses.xlsx", content, branch="main")
-
-            st.success("✅ Το αρχείο **expenses.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
-        except Exception as e:
-            st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
+    st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
+except Exception as e:
+    st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}"))
