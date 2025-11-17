@@ -80,7 +80,6 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.166},
 }
 
-
 # -------------------------------------------------------------
 # Helper Functions
 # -------------------------------------------------------------
@@ -110,6 +109,22 @@ def fetch_reservations(from_date, to_date):
         return pd.DataFrame()
 
     df = pd.json_normalize(all_bookings)
+    
+    # Rename columns για ευκολία
+    df = df.rename(columns={
+        "id": "booking_id",
+        "apartment.id": "apartment_id",
+        "apartment.name": "apartment_name",
+        "channel.name": "platform",
+        "guest-name": "guest_name",
+        "adults": "adults",
+        "children": "children",
+        "price": "price"
+    })
+    
+    # Αποκλείουμε blocked bookings
+    df = df[df.get("is-blocked-booking", False) == False]
+    
     return df
 
 def get_group_by_apartment(apt_id):
@@ -120,12 +135,14 @@ def get_group_by_apartment(apt_id):
 
 def calculate_price_without_tax(row):
     price = float(row.get("price", 0))
-    nights = (pd.to_datetime(row.get("departure")) - pd.to_datetime(row.get("arrival"))).days
-    month = pd.to_datetime(row.get("arrival")).month
-    platform = str(row.get("channel.name", "")).lower()
+    arrival = pd.to_datetime(row.get("arrival"))
+    departure = pd.to_datetime(row.get("departure"))
+    nights = (departure - arrival).days
+    month = arrival.month
+    platform = str(row.get("platform", "")).lower()
     
     winter_months = [1, 2, 3, 11, 12]
-    apartment_id = row.get("apartment.id")
+    apartment_id = row.get("apartment_id")
     group = get_group_by_apartment(apartment_id)
     if not group or nights == 0:
         return 0.0
@@ -141,9 +158,9 @@ def calculate_price_without_tax(row):
         return (adjusted / 1.13) - (adjusted * 0.005)
 
 def get_booking_fee(row):
-    platform = str(row.get("channel.name", "")).lower()
+    platform = str(row.get("platform", "")).lower()
     total = float(row.get("price", 0))
-    apartment_id = row.get("apartment.id")
+    apartment_id = row.get("apartment_id")
     group = get_group_by_apartment(apartment_id)
     if not group:
         return 0.0
@@ -161,7 +178,7 @@ def get_booking_fee(row):
 
 def calculate_airstay_commission(row):
     price_without_tax = row.get("Price Without Tax", 0)
-    apartment_id = row.get("apartment.id")
+    apartment_id = row.get("apartment_id")
     group = get_group_by_apartment(apartment_id)
     if not group:
         return 0.0
@@ -205,12 +222,12 @@ st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
 # Filter for selected group
-df_filtered = df_new[df_new["apartment.id"].isin(APARTMENTS[selected_group])]
+df_filtered = df_new[df_new["apartment_id"].isin(APARTMENTS[selected_group])]
 
 # Keep only needed columns
 columns_to_keep = [
-    "id", "apartment.id", "apartment.name", "channel.name",
-    "guest-name", "arrival", "departure",
+    "booking_id", "apartment_id", "apartment_name", "platform",
+    "guest_name", "arrival", "departure",
     "Guests",
     "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
 ]
