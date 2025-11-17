@@ -301,4 +301,4 @@ try:
 
     st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
 except Exception as e:
-    st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}"))
+    st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
