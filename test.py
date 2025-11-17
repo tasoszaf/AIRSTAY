@@ -90,6 +90,7 @@ def fetch_reservations(from_date, to_date):
         "to": to_date,
         "includePriceElements": True,
         "showCancellation": False,
+        "excludeBlocked": True,
         "page": 1,
         "pageSize": 100
     }
