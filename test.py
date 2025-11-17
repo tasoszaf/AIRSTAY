@@ -24,26 +24,17 @@ RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
 # -------------------------------------------------------------
-# Επιλογή λειτουργίας
+# Hardcoded Months Range
 # -------------------------------------------------------------
-FETCH_MODE = "show_only"  # ή "show_only" ή "save_and_show"
-start_month = 1
-end_month = 10
+START_MONTH = 3   # π.χ. Ιανουάριος
+END_MONTH = 5    # π.χ. Οκτώβριος
 
-# -------------------------------------------------------------
-# Ημερομηνίες
-# -------------------------------------------------------------
 today = date.today()
-yesterday = today - timedelta(days=1)
+from_date = date(today.year, START_MONTH, 1).strftime("%Y-%m-%d")
+next_month = date(today.year, END_MONTH, 28) + timedelta(days=4)
+last_day = (next_month - timedelta(days=next_month.day)).day
+to_date = date(today.year, END_MONTH, last_day).strftime("%Y-%m-%d")
 
-if FETCH_MODE == "show_only":
-    from_date = date(today.year, today.month, 1).strftime("%Y-%m-%d")
-    to_date = yesterday.strftime("%Y-%m-%d")
-else:
-    from_date = date(today.year, start_month, 1).strftime("%Y-%m-%d")
-    next_month = date(today.year, end_month, 28) + timedelta(days=4)
-    last_day = (next_month - timedelta(days=next_month.day)).day
-    to_date = date(today.year, end_month, last_day).strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
@@ -89,18 +80,9 @@ APARTMENT_SETTINGS = {
     "FINIKAS": {"winter_base": 0.5, "summer_base": 2, "airstay_commission": 0, "booking_fee_other": 0, "booking_fee": 0.166},
 }
 
-# -------------------------------------------------------------
-# Sidebar: Επιλογή μήνα/καταλύματος
-# -------------------------------------------------------------
-st.sidebar.header("🏠 Επιλογή Καταλύματος")
-selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-
-st.sidebar.header("📅 Επιλογή Μηνών")
-start_month = st.sidebar.number_input("Από μήνα", min_value=1, max_value=12, value=1)
-end_month = st.sidebar.number_input("Έως μήνα", min_value=1, max_value=12, value=date.today().month)
 
 # -------------------------------------------------------------
-# Fetch Reservations
+# Helper Functions
 # -------------------------------------------------------------
 def fetch_reservations(from_date, to_date):
     params = {
@@ -125,13 +107,9 @@ def fetch_reservations(from_date, to_date):
     if not all_bookings:
         return pd.DataFrame()
 
-    # Normalize nested JSON fields
     df = pd.json_normalize(all_bookings)
     return df
 
-# -------------------------------------------------------------
-# Helper Functions
-# -------------------------------------------------------------
 def get_group_by_apartment(apt_id):
     for g, apt_list in APARTMENTS.items():
         if apt_id in apt_list:
@@ -147,7 +125,7 @@ def calculate_price_without_tax(row):
 
     apartment_id = row.get("apartment.id")
     group = get_group_by_apartment(apartment_id)
-    if not group:
+    if not group or nights == 0:
         return 0.0
 
     winter_base = APARTMENT_SETTINGS[group]["winter_base"]
@@ -197,6 +175,7 @@ def calculate_columns(df):
     df["Booking Fee"] = df.apply(get_booking_fee, axis=1)
     df["Airstay Commission"] = df.apply(calculate_airstay_commission, axis=1)
     df["Owner Profit"] = df["Price Without Tax"] - df["Booking Fee"] - df["Airstay Commission"]
+    df["Guests"] = df["adults"] + df["children"]
     return df
 
 # -------------------------------------------------------------
@@ -216,11 +195,7 @@ def parse_amount(v):
 # -------------------------------------------------------------
 # Main Flow
 # -------------------------------------------------------------
-today = date.today()
-from_date = date(today.year, start_month, 1).strftime("%Y-%m-%d")
-next_month = date(today.year, end_month, 28) + timedelta(days=4)
-last_day = (next_month - timedelta(days=next_month.day)).day
-to_date = date(today.year, end_month, last_day).strftime("%Y-%m-%d")
+selected_group = "ZED"  # Μπορείς να αλλάξεις εδώ το group που θέλεις να εμφανίσεις
 
 df_new = fetch_reservations(from_date, to_date)
 df_new = calculate_columns(df_new)
@@ -228,21 +203,28 @@ df_new = calculate_columns(df_new)
 # Φιλτράρισμα ανά group
 df_filtered = df_new[df_new["apartment.id"].isin(APARTMENTS[selected_group])]
 
+# Κρατάμε μόνο τις απαραίτητες στήλες
+columns_to_keep = [
+    "id", "apartment.id", "apartment.name", "channel.name",
+    "guest-name", "arrival", "departure",
+    "Guests",
+    "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
+]
+df_filtered = df_filtered[columns_to_keep]
+
 # -------------------------------------------------------------
 # Metrics ανά μήνα
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price": 0, "Total Expenses": 0, "Owner Profit": 0})
-
 for idx, row in df_filtered.iterrows():
-    checkin = pd.to_datetime(row.get("arrival", today))
-    checkout = pd.to_datetime(row.get("departure", today))
+    checkin = pd.to_datetime(row["arrival"])
+    checkout = pd.to_datetime(row["departure"])
     total_days = (checkout - checkin).days
     if total_days == 0:
         continue
 
     daily_price = row["Price Without Tax"] / total_days
     daily_profit = row["Owner Profit"] / total_days
-
     current_day = checkin
     while current_day < checkout:
         year, month = current_day.year, current_day.month
@@ -287,7 +269,7 @@ st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(df_filtered, use_container_width=True)
 
 # -------------------------------------------------------------
-# Αποθήκευση σε Excel
+# Αποθήκευση Excel
 # -------------------------------------------------------------
 df_filtered.to_excel(RESERVATIONS_FILE, index=False)
 st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE}")
@@ -314,5 +296,8 @@ try:
         repo.create_file(FILE_PATH, "🆕 Add reservations.xlsx", content, branch="main")
 
     st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
+except Exception as e:
+    st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
+
 except Exception as e:
     st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
