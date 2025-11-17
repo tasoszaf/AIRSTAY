@@ -103,13 +103,30 @@ end_month = st.sidebar.number_input("Έως μήνα", min_value=1, max_value=12
 # Fetch Reservations
 # -------------------------------------------------------------
 def fetch_reservations(from_date, to_date):
-    params = {"dateFrom": from_date, "dateTo": to_date}
-    r = requests.get(reservations_url, headers=headers, params=params)
-    if r.status_code != 200:
-        st.error(f"Σφάλμα API: {r.status_code}")
+    params = {
+        "from": from_date,
+        "to": to_date,
+        "includePriceElements": True,
+        "page": 1,
+        "pageSize": 100
+    }
+    all_bookings = []
+    while True:
+        r = requests.get(reservations_url, headers=headers, params=params)
+        if r.status_code != 200:
+            st.error(f"Σφάλμα API: {r.status_code}")
+            return pd.DataFrame()
+        data = r.json()
+        all_bookings.extend(data.get("bookings", []))
+        if params["page"] >= data.get("page_count", 1):
+            break
+        params["page"] += 1
+
+    if not all_bookings:
         return pd.DataFrame()
-    data = r.json()
-    df = pd.DataFrame(data)
+
+    # Normalize nested JSON fields
+    df = pd.json_normalize(all_bookings)
     return df
 
 # -------------------------------------------------------------
@@ -123,12 +140,12 @@ def get_group_by_apartment(apt_id):
 
 def calculate_price_without_tax(row):
     price = float(row.get("price", 0))
-    nights = float(row.get("numberOfNights", 0))
-    month = int(row.get("month", 0))
-    platform = str(row.get("platform", "")).upper()
+    nights = (pd.to_datetime(row.get("departure")) - pd.to_datetime(row.get("arrival"))).days
+    month = pd.to_datetime(row.get("arrival")).month
+    platform = str(row.get("channel.name", "")).upper()
     winter_months = [1, 2, 3, 11, 12]
 
-    apartment_id = row.get("apartmentId")
+    apartment_id = row.get("apartment.id")
     group = get_group_by_apartment(apartment_id)
     if not group:
         return 0.0
@@ -147,15 +164,14 @@ def calculate_price_without_tax(row):
     return result
 
 def get_booking_fee(row):
-    platform = str(row.get("platform", "")).lower()
+    platform = str(row.get("channel.name", "")).lower()
     total = float(row.get("price", 0))
-    apartment_id = row.get("apartmentId")
+    apartment_id = row.get("apartment.id")
     group = get_group_by_apartment(apartment_id)
     if not group:
         return 0.0
 
     settings = APARTMENT_SETTINGS[group]
-
     if "booking" in platform:
         return total * settings.get("booking_fee", 0.166)
     if "airbnb" in platform:
@@ -167,7 +183,7 @@ def get_booking_fee(row):
 
 def calculate_airstay_commission(row):
     price_without_tax = row.get("Price Without Tax", 0)
-    apartment_id = row.get("apartmentId")
+    apartment_id = row.get("apartment.id")
     group = get_group_by_apartment(apartment_id)
     if not group:
         return 0.0
@@ -177,12 +193,10 @@ def calculate_airstay_commission(row):
 def calculate_columns(df):
     if df.empty:
         return df
-
     df["Price Without Tax"] = df.apply(calculate_price_without_tax, axis=1)
     df["Booking Fee"] = df.apply(get_booking_fee, axis=1)
     df["Airstay Commission"] = df.apply(calculate_airstay_commission, axis=1)
     df["Owner Profit"] = df["Price Without Tax"] - df["Booking Fee"] - df["Airstay Commission"]
-
     return df
 
 # -------------------------------------------------------------
@@ -212,7 +226,7 @@ df_new = fetch_reservations(from_date, to_date)
 df_new = calculate_columns(df_new)
 
 # Φιλτράρισμα ανά group
-df_filtered = df_new[df_new["apartmentId"].isin(APARTMENTS[selected_group])]
+df_filtered = df_new[df_new["apartment.id"].isin(APARTMENTS[selected_group])]
 
 # -------------------------------------------------------------
 # Metrics ανά μήνα
@@ -220,8 +234,8 @@ df_filtered = df_new[df_new["apartmentId"].isin(APARTMENTS[selected_group])]
 monthly_metrics = defaultdict(lambda: {"Total Price": 0, "Total Expenses": 0, "Owner Profit": 0})
 
 for idx, row in df_filtered.iterrows():
-    checkin = pd.to_datetime(row.get("arrivalDate", today))
-    checkout = pd.to_datetime(row.get("departureDate", today))
+    checkin = pd.to_datetime(row.get("arrival", today))
+    checkout = pd.to_datetime(row.get("departure", today))
     total_days = (checkout - checkin).days
     if total_days == 0:
         continue
