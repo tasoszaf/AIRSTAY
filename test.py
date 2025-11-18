@@ -144,7 +144,7 @@ def calculate_price_without_tax(row):
     winter_base = APARTMENT_SETTINGS[group]["winter_base"]
     summer_base = APARTMENT_SETTINGS[group]["summer_base"]
     base = winter_base if month in winter_months else summer_base
-    net_price = price - (base * nights)
+    net_price = (price * 0.82) - (base * nights)
 
     if platform == "expedia":
         return (net_price / 1.13) - (net_price * 0.005) + (price * 0.18)
