@@ -23,7 +23,7 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
 # ---------------- Parameters ----------------
 START_MONTH = 1
-END_MONTH = 10
+END_MONTH = 12
 today = date.today()
 
 # ---------------- Apartments & Settings ----------------
