@@ -261,7 +261,7 @@ if fetch_and_store:
 
     # Save
     df_to_store_final.to_excel(RESERVATIONS_FILE, index=False)
-    st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE} (μόνο οι εμφανιζόμενες στήλες).")
+    #st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE} (μόνο οι εμφανιζόμενες στήλες).")
 
     # Upload στο GitHub (προαιρετικό, απαιτεί st.secrets["github"])
     try:
@@ -282,9 +282,9 @@ if fetch_and_store:
         except Exception:
             repo.create_file(FILE_PATH, "🆕 Add reservations.xlsx", content, branch="main")
 
-        st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
+        #st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
     except Exception as e:
-        st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
+        #st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
 
     # For display: use df_to_store_final
     df_display_source = df_to_store_final.copy()
@@ -308,7 +308,7 @@ else:
     yesterday = today - timedelta(days=1)
     if yesterday < first_of_month:
         # nothing to fetch
-        st.info("Δεν υπάρχουν νέες API κλήσεις — σήμερα είναι η πρώτη μέρα του μήνα.")
+        #st.info("Δεν υπάρχουν νέες API κλήσεις — σήμερα είναι η πρώτη μέρα του μήνα.")
         df_current_month = pd.DataFrame()
     else:
         from_date = first_of_month.strftime("%Y-%m-%d")
@@ -398,6 +398,13 @@ for idx, row in expenses_df.iterrows():
     except Exception:
         continue
     monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
+
+# Φιλτράρουμε μόνο για τρέχον έτος και μέχρι τον τρέχοντα μήνα
+monthly_table = monthly_table[
+    (monthly_table["Έτος"] == today.year) &
+    (monthly_table["Μήνας"].map(lambda m: list(months_el.values()).index(m)+1) <= today.month)
+]
+
 
 # Build monthly table
 months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
