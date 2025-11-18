@@ -203,7 +203,6 @@ def parse_amount(v):
 # Fetch reservations ανά μήνα
 # -------------------------------------------------------------
 all_dfs = []
-
 for month in range(START_MONTH, END_MONTH + 1):
     from_date = date(today.year, month, 1).strftime("%Y-%m-%d")
     next_month = date(today.year, month, 28) + timedelta(days=4)
@@ -235,12 +234,36 @@ df_to_save.to_excel(RESERVATIONS_FILE, index=False)
 st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE} χωρίς διπλότυπα")
 
 # -------------------------------------------------------------
-# Sidebar επιλογής γκρουπ
+# Upload στο GitHub
+# -------------------------------------------------------------
+try:
+    GITHUB_TOKEN = st.secrets["github"]["token"]
+    GITHUB_USER = st.secrets["github"]["username"]
+    GITHUB_REPO = st.secrets["github"]["repo"]
+    FILE_PATH = "reservations.xlsx"
+
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_user(GITHUB_USER).get_repo(GITHUB_REPO)
+
+    with open(RESERVATIONS_FILE, "rb") as f:
+        content = f.read()
+
+    try:
+        contents = repo.get_contents(FILE_PATH, ref="main")
+        repo.update_file(FILE_PATH, "🔁 Update reservations.xlsx", content, contents.sha, branch="main")
+    except Exception:
+        repo.create_file(FILE_PATH, "🆕 Add reservations.xlsx", content, branch="main")
+
+    st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
+except Exception as e:
+    st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
+
+# -------------------------------------------------------------
+# Sidebar επιλογής γκρουπ & εμφάνιση
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-# Φιλτράρισμα για εμφάνιση στο Streamlit
 if df_to_save.empty:
     df_filtered = pd.DataFrame(columns=[
         "booking_id", "apartment_id", "apartment_name", "platform",
@@ -254,7 +277,6 @@ else:
 # Metrics ανά μήνα με έξοδα
 # -------------------------------------------------------------
 monthly_metrics = defaultdict(lambda: {"Total Price": 0, "Total Expenses": 0, "Owner Profit": 0})
-
 for idx, row in df_filtered.iterrows():
     checkin = pd.to_datetime(row["arrival"])
     checkout = pd.to_datetime(row["departure"])
@@ -279,7 +301,7 @@ for idx, row in expenses_df.iterrows():
     monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
 
 months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
+             7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
 
 monthly_table = pd.DataFrame([
     {
