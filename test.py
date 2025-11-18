@@ -224,6 +224,12 @@ selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()
 # Filter for selected group
 df_filtered = df_new[df_new["apartment_id"].isin(APARTMENTS[selected_group])]
 
+# Αν η πλατφόρμα είναι Expedia, η τιμή διαιρείται με 0.82
+df_filtered["price"] = df_filtered.apply(
+    lambda row: row["price"] / 0.82 if str(row["platform"]).lower() == "expedia" else row["price"],
+    axis=1
+)
+
 # Keep only needed columns
 columns_to_keep = [
     "booking_id", "apartment_id", "apartment_name", "platform",
