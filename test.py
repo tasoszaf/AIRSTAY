@@ -26,8 +26,8 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Hardcoded Months Range
 # -------------------------------------------------------------
-START_MONTH = 8
-END_MONTH = 9
+START_MONTH = 1
+END_MONTH = 2
 
 today = date.today()
 from_date = date(today.year, START_MONTH, 1).strftime("%Y-%m-%d")
@@ -94,9 +94,11 @@ def fetch_reservations(from_date, to_date):
     }
     all_bookings = []
     while True:
-        r = requests.get(reservations_url, headers=headers, params=params)
-        if r.status_code != 200:
-            st.error(f"Σφάλμα API: {r.status_code}")
+        try:
+            r = requests.get(reservations_url, headers=headers, params=params, timeout=10)
+            r.raise_for_status()
+        except requests.RequestException:
+            st.warning("⚠️ Σφάλμα στην API. Προσπαθήστε αργότερα.")
             return pd.DataFrame()
         data = r.json()
         all_bookings.extend(data.get("bookings", []))
@@ -213,35 +215,33 @@ if not df_new.empty:
     )
     df_new = calculate_columns(df_new)
 
+# Append στο ίδιο Excel χωρίς διπλότυπα
+if os.path.exists(RESERVATIONS_FILE):
+    existing_df = pd.read_excel(RESERVATIONS_FILE)
+    combined_df = pd.concat([existing_df, df_new], ignore_index=True)
+    df_to_save = combined_df.drop_duplicates(subset=["booking_id"])
+else:
+    df_to_save = df_new
+
+df_to_save.to_excel(RESERVATIONS_FILE, index=False)
+st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE} χωρίς διπλότυπα")
+
 # -------------------------------------------------------------
-# Sidebar Dropdown for Group Selection
+# Sidebar επιλογής γκρουπ
 # -------------------------------------------------------------
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-# Filter for selected group
-df_filtered = df_new[df_new["apartment_id"].isin(APARTMENTS[selected_group])]
-
-columns_to_keep = [
-    "booking_id", "apartment_id", "apartment_name", "platform",
-    "guest_name", "arrival", "departure",
-    "Guests",
-    "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
-]
-df_filtered = df_filtered[columns_to_keep]
-
-# -------------------------------------------------------------
-# Append σε υπάρχον Excel χωρίς διπλότυπα
-# -------------------------------------------------------------
-if os.path.exists(RESERVATIONS_FILE):
-    existing_df = pd.read_excel(RESERVATIONS_FILE)
-    combined_df = pd.concat([existing_df, df_filtered], ignore_index=True)
-    df_to_save = combined_df.drop_duplicates(subset=["booking_id"])
+# Φιλτράρουμε μόνο για το επιλεγμένο group για εμφάνιση
+if df_to_save.empty:
+    df_filtered = pd.DataFrame(columns=[
+        "booking_id", "apartment_id", "apartment_name", "platform",
+        "guest_name", "arrival", "departure",
+        "Guests",
+        "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
+    ])
 else:
-    df_to_save = df_filtered
-
-df_to_save.to_excel(RESERVATIONS_FILE, index=False)
-st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESERVATIONS_FILE} χωρίς διπλότυπα")
+    df_filtered = df_to_save[df_to_save["apartment_id"].isin(APARTMENTS[selected_group])]
 
 # -------------------------------------------------------------
 # Metrics ανά μήνα με έξοδα
@@ -295,28 +295,3 @@ st.dataframe(monthly_table, use_container_width=True)
 # -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(df_filtered, use_container_width=True)
-
-# -------------------------------------------------------------
-# Upload to GitHub
-# -------------------------------------------------------------
-try:
-    GITHUB_TOKEN = st.secrets["github"]["token"]
-    GITHUB_USER = st.secrets["github"]["username"]
-    GITHUB_REPO = st.secrets["github"]["repo"]
-    FILE_PATH = "reservations.xlsx"
-
-    g = Github(GITHUB_TOKEN)
-    repo = g.get_user(GITHUB_USER).get_repo(GITHUB_REPO)
-
-    with open(RESERVATIONS_FILE, "rb") as f:
-        content = f.read()
-
-    try:
-        contents = repo.get_contents(FILE_PATH, ref="main")
-        repo.update_file(FILE_PATH, "🔁 Update reservations.xlsx", content, contents.sha, branch="main")
-    except Exception:
-        repo.create_file(FILE_PATH, "🆕 Add reservations.xlsx", content, branch="main")
-
-    st.success("✅ Το αρχείο **reservations.xlsx** ενημερώθηκε επιτυχώς στο GitHub.")
-except Exception as e:
-    st.warning(f"⚠️ Σφάλμα κατά το ανέβασμα στο GitHub: {e}")
