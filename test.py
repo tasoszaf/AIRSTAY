@@ -133,10 +133,14 @@ def get_group_by_apartment(apt_id):
             return g
     return None
 
-def calculate_price_without_tax(group, platform, price, nights, month):
-    platform = platform.lower()
+def calculate_price_without_tax(row):
+    group = row["group"]
+    platform = row["platform"].lower()
+    price = row["price"]
+    nights = row["nights"]
+    month = row["month"]
 
-    # Επιλογή βάσης (winter ή summer)
+    # Επιλογή βάσης
     if month in [1, 2, 3, 11, 12]:
         base = APARTMENT_SETTINGS[group]["winter_base"]
     else:
@@ -151,9 +155,10 @@ def calculate_price_without_tax(group, platform, price, nights, month):
             + (price * 0.18)
         )
 
-    # ---- 4. ΟΛΕΣ ΟΙ ΑΛΛΕΣ ΠΛΑΤΦΟΡΜΕΣ ---------------------------------------
+    # ---- 4. ALL OTHER PLATFORMS --------------------------------------------
     net_price = price - (base * nights)
     return (net_price / 1.13) - (net_price * 0.005)
+
 
 
 def get_booking_fee(row):
