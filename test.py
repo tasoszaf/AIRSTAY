@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
 from github import Github
+import time
 
 # -------------------------------------------------------------
 # Streamlit Config
@@ -28,12 +29,7 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 START_MONTH = 1
 END_MONTH = 10
-
 today = date.today()
-from_date = date(today.year, START_MONTH, 1).strftime("%Y-%m-%d")
-next_month = date(today.year, END_MONTH, 28) + timedelta(days=4)
-last_day = (next_month - timedelta(days=next_month.day)).day
-to_date = date(today.year, END_MONTH, last_day).strftime("%Y-%m-%d")
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
@@ -98,7 +94,6 @@ def fetch_reservations(from_date, to_date):
             r = requests.get(reservations_url, headers=headers, params=params, timeout=10)
             r.raise_for_status()
         except requests.RequestException:
-            st.warning("⚠️ Σφάλμα στην API. Προσπαθήστε αργότερα.")
             return pd.DataFrame()
         data = r.json()
         all_bookings.extend(data.get("bookings", []))
@@ -123,6 +118,14 @@ def fetch_reservations(from_date, to_date):
     df = df[df.get("is-blocked-booking", False) == False]
     return df
 
+def fetch_reservations_with_retry(from_date, to_date, retries=3, delay=5):
+    for attempt in range(retries):
+        df = fetch_reservations(from_date, to_date)
+        if not df.empty:
+            return df
+        time.sleep(delay)
+    return pd.DataFrame()
+
 def get_group_by_apartment(apt_id):
     for g, apt_list in APARTMENTS.items():
         if apt_id in apt_list:
@@ -135,19 +138,15 @@ def calculate_price_without_tax(row):
     departure = pd.to_datetime(row.get("departure"))
     nights = (departure - arrival).days
     month = arrival.month
-    platform = str(row.get("platform", "")).lower()
-    
-    winter_months = [1, 2, 3, 11, 12]
     apartment_id = row.get("apartment_id")
     group = get_group_by_apartment(apartment_id)
     if not group or nights == 0:
         return 0.0
-
+    winter_months = [1, 2, 3, 11, 12]
     winter_base = APARTMENT_SETTINGS[group]["winter_base"]
     summer_base = APARTMENT_SETTINGS[group]["summer_base"]
     base = winter_base if month in winter_months else summer_base
     net_price = price - (base * nights)
-
     return (net_price / 1.13) - (net_price * 0.005)
 
 def get_booking_fee(row):
@@ -157,9 +156,7 @@ def get_booking_fee(row):
     group = get_group_by_apartment(apartment_id)
     if not group:
         return 0.0
-
     settings = APARTMENT_SETTINGS[group]
-
     if "booking.com" in platform:
         return total * settings.get("booking_fee", 0.166)
     elif "airbnb" in platform:
@@ -203,19 +200,30 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Fetch All Reservations
+# Fetch reservations ανά μήνα
 # -------------------------------------------------------------
-df_new = fetch_reservations(from_date, to_date)
+all_dfs = []
 
-if not df_new.empty:
-    # Διόρθωση τιμής για Expedia
-    df_new["price"] = df_new.apply(
-        lambda row: row["price"] / 0.82 if str(row["platform"]).lower() == "expedia" else row["price"],
-        axis=1
-    )
-    df_new = calculate_columns(df_new)
+for month in range(START_MONTH, END_MONTH + 1):
+    from_date = date(today.year, month, 1).strftime("%Y-%m-%d")
+    next_month = date(today.year, month, 28) + timedelta(days=4)
+    last_day = (next_month - timedelta(days=next_month.day)).day
+    to_date = date(today.year, month, last_day).strftime("%Y-%m-%d")
+    
+    st.info(f"📥 Φόρτωση κρατήσεων για {month}/{today.year}...")
+    df_month = fetch_reservations_with_retry(from_date, to_date)
+    
+    if not df_month.empty:
+        df_month["price"] = df_month.apply(
+            lambda row: row["price"] / 0.82 if str(row["platform"]).lower() == "expedia" else row["price"],
+            axis=1
+        )
+        df_month = calculate_columns(df_month)
+        all_dfs.append(df_month)
 
-# Append στο ίδιο Excel χωρίς διπλότυπα
+df_new = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
+# Append στο Excel χωρίς διπλότυπα
 if os.path.exists(RESERVATIONS_FILE):
     existing_df = pd.read_excel(RESERVATIONS_FILE)
     combined_df = pd.concat([existing_df, df_new], ignore_index=True)
@@ -232,13 +240,12 @@ st.success(f"✅ Οι κρατήσεις αποθηκεύτηκαν στο {RESE
 st.sidebar.header("🏠 Επιλογή Καταλύματος")
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 
-# Φιλτράρουμε μόνο για το επιλεγμένο group για εμφάνιση
+# Φιλτράρισμα για εμφάνιση στο Streamlit
 if df_to_save.empty:
     df_filtered = pd.DataFrame(columns=[
         "booking_id", "apartment_id", "apartment_name", "platform",
         "guest_name", "arrival", "departure",
-        "Guests",
-        "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
+        "Guests", "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
     ])
 else:
     df_filtered = df_to_save[df_to_save["apartment_id"].isin(APARTMENTS[selected_group])]
@@ -271,10 +278,8 @@ for idx, row in expenses_df.iterrows():
     key = (int(row["Year"]), int(row["Month"]))
     monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
 
-months_el = {
-    1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"
-}
+months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+    7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
 
 monthly_table = pd.DataFrame([
     {
@@ -290,8 +295,5 @@ monthly_table = pd.DataFrame([
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
 st.dataframe(monthly_table, use_container_width=True)
 
-# -------------------------------------------------------------
-# Display Reservations
-# -------------------------------------------------------------
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
 st.dataframe(df_filtered, use_container_width=True)
