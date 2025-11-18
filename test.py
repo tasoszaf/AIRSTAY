@@ -109,6 +109,7 @@ def fetch_reservations(from_date, to_date):
 
     df = pd.json_normalize(all_bookings)
     
+    # Rename columns για ευκολία
     df = df.rename(columns={
         "id": "booking_id",
         "apartment.id": "apartment_id",
@@ -117,12 +118,12 @@ def fetch_reservations(from_date, to_date):
         "guest-name": "guest_name",
         "adults": "adults",
         "children": "children",
-        "price": "price",
-        "check-in": "arrival",
-        "check-out": "departure"
+        "price": "price"
     })
     
+    # Αποκλείουμε blocked bookings
     df = df[df.get("is-blocked-booking", False) == False]
+    
     return df
 
 def get_group_by_apartment(apt_id):
@@ -132,27 +133,28 @@ def get_group_by_apartment(apt_id):
     return None
 
 def calculate_price_without_tax(row):
-    apartment_id = row["apartment_id"]
+    price = float(row.get("price", 0))
+    arrival = pd.to_datetime(row.get("arrival"))
+    departure = pd.to_datetime(row.get("departure"))
+    nights = (departure - arrival).days
+    month = arrival.month
+    platform = str(row.get("platform", "")).lower()
+    
+    winter_months = [1, 2, 3, 11, 12]
+    apartment_id = row.get("apartment_id")
     group = get_group_by_apartment(apartment_id)
-    if not group:
+    if not group or nights == 0:
         return 0.0
 
-    platform = str(row.get("platform", "")).lower()
-    price = float(row.get("price", 0))
-    nights = int(row.get("nights", 1))
-    month = pd.to_datetime(row.get("arrival")).month
+    winter_base = APARTMENT_SETTINGS[group]["winter_base"]
+    summer_base = APARTMENT_SETTINGS[group]["summer_base"]
+    base = winter_base if month in winter_months else summer_base
 
-    if month in [1,2,3,11,12]:
-        base = APARTMENT_SETTINGS[group]["winter_base"]
+    if "booking.com" in platform:
+        return ((price - base * nights) / 1.005) * APARTMENT_SETTINGS[group]["booking_fee"]
     else:
-        base = APARTMENT_SETTINGS[group]["summer_base"]
-
-    if platform == "expedia":
-        net_price = (price * 0.82) - (base * nights)
-        return (net_price / 1.13) - (net_price * 0.005) + (price * 0.18)
-
-    net_price = price - (base * nights)
-    return (net_price / 1.13) - (net_price * 0.005)
+        adjusted = price - base * nights
+        return (adjusted / 1.13) - (adjusted * 0.005)
 
 def get_booking_fee(row):
     platform = str(row.get("platform", "")).lower()
@@ -161,7 +163,9 @@ def get_booking_fee(row):
     group = get_group_by_apartment(apartment_id)
     if not group:
         return 0.0
+
     settings = APARTMENT_SETTINGS[group]
+
     if "booking.com" in platform:
         return total * settings.get("booking_fee", 0.166)
     elif "airbnb" in platform:
@@ -205,7 +209,7 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Fetch Reservations & Calculate Columns
+# Fetch All Reservations
 # -------------------------------------------------------------
 df_new = fetch_reservations(from_date, to_date)
 df_new = calculate_columns(df_new)
@@ -219,6 +223,7 @@ selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()
 # Filter for selected group
 df_filtered = df_new[df_new["apartment_id"].isin(APARTMENTS[selected_group])]
 
+# Keep only needed columns
 columns_to_keep = [
     "booking_id", "apartment_id", "apartment_name", "platform",
     "guest_name", "arrival", "departure",
@@ -251,6 +256,7 @@ for idx, row in df_filtered.iterrows():
 
         current_day = next_month_day
 
+# Add expenses
 for idx, row in expenses_df.iterrows():
     if row["Accommodation"].upper() != selected_group.upper():
         continue
