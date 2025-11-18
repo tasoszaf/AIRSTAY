@@ -108,8 +108,6 @@ def fetch_reservations(from_date, to_date):
         return pd.DataFrame()
 
     df = pd.json_normalize(all_bookings)
-    
-    # Rename columns για ευκολία
     df = df.rename(columns={
         "id": "booking_id",
         "apartment.id": "apartment_id",
@@ -120,10 +118,7 @@ def fetch_reservations(from_date, to_date):
         "children": "children",
         "price": "price"
     })
-    
-    # Αποκλείουμε blocked bookings
     df = df[df.get("is-blocked-booking", False) == False]
-    
     return df
 
 def get_group_by_apartment(apt_id):
@@ -152,7 +147,7 @@ def calculate_price_without_tax(row):
     net_price = price - (base * nights)
 
     if platform == "expedia":
-        return (net_price * 0.82 / 1.13) - (net_price * 0.005) + (price * 0.18)
+        return (net_price / 1.13) - (net_price * 0.005) + (price * 0.18)
     else:
         adjusted = price - base * nights
         return (adjusted / 1.13) - (adjusted * 0.005)
@@ -213,6 +208,18 @@ def parse_amount(v):
 # Fetch All Reservations
 # -------------------------------------------------------------
 df_new = fetch_reservations(from_date, to_date)
+
+# -------------------------------------------------------------
+# Διόρθωση τιμής για Expedia πριν τους υπολογισμούς
+# -------------------------------------------------------------
+df_new["price"] = df_new.apply(
+    lambda row: row["price"] / 0.82 if str(row["platform"]).lower() == "expedia" else row["price"],
+    axis=1
+)
+
+# -------------------------------------------------------------
+# Υπολογισμός υπολοίπων στηλών
+# -------------------------------------------------------------
 df_new = calculate_columns(df_new)
 
 # -------------------------------------------------------------
@@ -223,12 +230,6 @@ selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()
 
 # Filter for selected group
 df_filtered = df_new[df_new["apartment_id"].isin(APARTMENTS[selected_group])]
-
-# Αν η πλατφόρμα είναι Expedia, η τιμή διαιρείται με 0.82
-df_filtered["price"] = df_filtered.apply(
-    lambda row: row["price"] / 0.82 if str(row["platform"]).lower() == "expedia" else row["price"],
-    axis=1
-)
 
 # Keep only needed columns
 columns_to_keep = [
