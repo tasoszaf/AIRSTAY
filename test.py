@@ -198,7 +198,7 @@ def parse_amount(v):
         return 0.0
 
 # ---------------- Mode ----------------
-fetch_and_store = True  # True ή False
+fetch_and_store = False  # True ή False
 
 # ---------------- Columns ----------------
 columns_to_keep = [
