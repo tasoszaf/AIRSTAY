@@ -26,8 +26,8 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Hardcoded Months Range
 # -------------------------------------------------------------
-START_MONTH = 1   # π.χ. Μάιος
-END_MONTH = 10     # π.χ. Ιούνιος
+START_MONTH = 7   # π.χ. Μάιος
+END_MONTH = 8     # π.χ. Ιούνιος
 
 today = date.today()
 from_date = date(today.year, START_MONTH, 1).strftime("%Y-%m-%d")
