@@ -26,15 +26,14 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Hardcoded Months Range
 # -------------------------------------------------------------
-START_MONTH = 5   # π.χ. Ιανουάριος
-END_MONTH = 6  # π.χ. Οκτώβριος
+START_MONTH = 5   # π.χ. Μάιος
+END_MONTH = 6     # π.χ. Ιούνιος
 
 today = date.today()
 from_date = date(today.year, START_MONTH, 1).strftime("%Y-%m-%d")
 next_month = date(today.year, END_MONTH, 28) + timedelta(days=4)
 last_day = (next_month - timedelta(days=next_month.day)).day
 to_date = date(today.year, END_MONTH, last_day).strftime("%Y-%m-%d")
-
 
 # -------------------------------------------------------------
 # Καταλύματα & Settings
@@ -110,7 +109,6 @@ def fetch_reservations(from_date, to_date):
 
     df = pd.json_normalize(all_bookings)
     
-    # Rename columns για ευκολία
     df = df.rename(columns={
         "id": "booking_id",
         "apartment.id": "apartment_id",
@@ -119,12 +117,12 @@ def fetch_reservations(from_date, to_date):
         "guest-name": "guest_name",
         "adults": "adults",
         "children": "children",
-        "price": "price"
+        "price": "price",
+        "check-in": "arrival",
+        "check-out": "departure"
     })
     
-    # Αποκλείουμε blocked bookings
     df = df[df.get("is-blocked-booking", False) == False]
-    
     return df
 
 def get_group_by_apartment(apt_id):
@@ -134,32 +132,27 @@ def get_group_by_apartment(apt_id):
     return None
 
 def calculate_price_without_tax(row):
-    group = row["group"]
-    platform = row["platform"].lower()
-    price = row["price"]
-    nights = row["nights"]
-    month = row["month"]
+    apartment_id = row["apartment_id"]
+    group = get_group_by_apartment(apartment_id)
+    if not group:
+        return 0.0
 
-    # Επιλογή βάσης
-    if month in [1, 2, 3, 11, 12]:
+    platform = str(row.get("platform", "")).lower()
+    price = float(row.get("price", 0))
+    nights = int(row.get("nights", 1))
+    month = pd.to_datetime(row.get("arrival")).month
+
+    if month in [1,2,3,11,12]:
         base = APARTMENT_SETTINGS[group]["winter_base"]
     else:
         base = APARTMENT_SETTINGS[group]["summer_base"]
 
-    # ---- 1. EXPEDIA --------------------------------------------------------
     if platform == "expedia":
         net_price = (price * 0.82) - (base * nights)
-        return (
-            (net_price / 1.13)
-            - (net_price * 0.005)
-            + (price * 0.18)
-        )
+        return (net_price / 1.13) - (net_price * 0.005) + (price * 0.18)
 
-    # ---- 4. ALL OTHER PLATFORMS --------------------------------------------
     net_price = price - (base * nights)
     return (net_price / 1.13) - (net_price * 0.005)
-
-
 
 def get_booking_fee(row):
     platform = str(row.get("platform", "")).lower()
@@ -168,9 +161,7 @@ def get_booking_fee(row):
     group = get_group_by_apartment(apartment_id)
     if not group:
         return 0.0
-
     settings = APARTMENT_SETTINGS[group]
-
     if "booking.com" in platform:
         return total * settings.get("booking_fee", 0.166)
     elif "airbnb" in platform:
@@ -214,7 +205,7 @@ def parse_amount(v):
         return 0.0
 
 # -------------------------------------------------------------
-# Fetch All Reservations
+# Fetch Reservations & Calculate Columns
 # -------------------------------------------------------------
 df_new = fetch_reservations(from_date, to_date)
 df_new = calculate_columns(df_new)
@@ -228,7 +219,6 @@ selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()
 # Filter for selected group
 df_filtered = df_new[df_new["apartment_id"].isin(APARTMENTS[selected_group])]
 
-# Keep only needed columns
 columns_to_keep = [
     "booking_id", "apartment_id", "apartment_name", "platform",
     "guest_name", "arrival", "departure",
@@ -261,7 +251,6 @@ for idx, row in df_filtered.iterrows():
 
         current_day = next_month_day
 
-# Add expenses
 for idx, row in expenses_df.iterrows():
     if row["Accommodation"].upper() != selected_group.upper():
         continue
