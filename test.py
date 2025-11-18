@@ -23,7 +23,7 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
 # ---------------- Parameters ----------------
 START_MONTH = 1
-END_MONTH = 12
+END_MONTH = 10
 today = date.today()
 
 # ---------------- Apartments & Settings ----------------
@@ -96,6 +96,9 @@ def fetch_reservations(from_date, to_date):
         return pd.DataFrame()
 
     df = pd.json_normalize(all_bookings)
+    # ------------------- Αφαιρούμε τις ακυρωμένες -------------------
+    df = df[df["type"] != "cancellation"]
+
     df = df.rename(columns={
         "id": "booking_id",
         "apartment.id": "apartment_id",
@@ -195,7 +198,7 @@ def parse_amount(v):
         return 0.0
 
 # ---------------- Mode ----------------
-fetch_and_store = False  # True ή False
+fetch_and_store = True  # True ή False
 
 # ---------------- Columns ----------------
 columns_to_keep = [
