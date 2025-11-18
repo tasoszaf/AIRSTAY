@@ -133,29 +133,28 @@ def get_group_by_apartment(apt_id):
             return g
     return None
 
-def calculate_price_without_tax(row):
-    price = float(row.get("price", 0))
-    arrival = pd.to_datetime(row.get("arrival"))
-    departure = pd.to_datetime(row.get("departure"))
-    nights = (departure - arrival).days
-    month = arrival.month
-    platform = str(row.get("platform", "")).lower()
-    
-    winter_months = [1, 2, 3, 11, 12]
-    apartment_id = row.get("apartment_id")
-    group = get_group_by_apartment(apartment_id)
-    if not group or nights == 0:
-        return 0.0
+def calculate_price_without_tax(group, platform, price, nights, month):
+    platform = platform.lower()
 
-    winter_base = APARTMENT_SETTINGS[group]["winter_base"]
-    summer_base = APARTMENT_SETTINGS[group]["summer_base"]
-    base = winter_base if month in winter_months else summer_base
-
-    if "booking.com" in platform:
-        return ((price - base * nights) / 1.005) * APARTMENT_SETTINGS[group]["booking_fee"]
+    # Επιλογή βάσης (winter ή summer)
+    if month in [1, 2, 3, 11, 12]:
+        base = APARTMENT_SETTINGS[group]["winter_base"]
     else:
-        adjusted = price - base * nights
-        return (adjusted / 1.13) - (adjusted * 0.005)
+        base = APARTMENT_SETTINGS[group]["summer_base"]
+
+    # ---- 1. EXPEDIA --------------------------------------------------------
+    if platform == "expedia":
+        net_price = (price * 0.82) - (base * nights)
+        return (
+            (net_price / 1.13)
+            - (net_price * 0.005)
+            + (price * 0.18)
+        )
+
+    # ---- 4. ΟΛΕΣ ΟΙ ΑΛΛΕΣ ΠΛΑΤΦΟΡΜΕΣ ---------------------------------------
+    net_price = price - (base * nights)
+    return (net_price / 1.13) - (net_price * 0.005)
+
 
 def get_booking_fee(row):
     platform = str(row.get("platform", "")).lower()
