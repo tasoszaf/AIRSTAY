@@ -26,7 +26,7 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Hardcoded Months Range
 # -------------------------------------------------------------
-START_MONTH = 1
+START_MONTH = 8
 END_MONTH = 10
 
 today = date.today()
