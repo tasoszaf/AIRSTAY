@@ -196,9 +196,8 @@ def parse_amount(v):
     except:
         return 0.0
 
-# ---------------- UI: mode toggle ----------------
-st.sidebar.header("Λειτουργία")
-fetch_and_store = st.sidebar.checkbox("Κατέβασμα & Αποθήκευση (αν απενεργοποιηθεί: εμφανίζει από Excel + current month έως χθες)", value=False)
+# Set mode manually: True = fetch & save, False = display from Excel + current month
+fetch_and_store = False  # True ή False
 
 # ---------------- Main flow ----------------
 # columns to keep (only these are saved in Excel)
@@ -217,7 +216,7 @@ if fetch_and_store:
         last_day = (next_month - timedelta(days=next_month.day)).day
         to_date = date(today.year, month, last_day).strftime("%Y-%m-%d")
 
-        st.info(f"📥 Φόρτωση κρατήσεων για {month}/{today.year}...")
+        
         df_month = fetch_reservations_with_retry(from_date, to_date)
         if df_month.empty:
             st.write(f" - Δεν βρέθηκαν κρατήσεις ή σφάλμα API για {month}/{today.year}.")
