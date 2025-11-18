@@ -26,8 +26,8 @@ EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 # -------------------------------------------------------------
 # Hardcoded Months Range
 # -------------------------------------------------------------
-START_MONTH = 3
-END_MONTH = 4
+START_MONTH = 5
+END_MONTH = 7
 
 today = date.today()
 from_date = date(today.year, START_MONTH, 1).strftime("%Y-%m-%d")
