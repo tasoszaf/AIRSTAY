@@ -346,7 +346,18 @@ monthly_table = monthly_table[
 for col in ["Συνολική Τιμή Κρατήσεων (€)","Συνολικά Έξοδα (€)","Καθαρό Κέρδος Ιδιοκτήτη (€)"]:
     if not monthly_table.empty:
         monthly_table[col] = monthly_table[col].map(lambda x: f"{x:.2f}")
-
+        
+# Προσθήκη συνολικών στο τέλος του πίνακα
+if not monthly_table.empty:
+    total_row = {
+        "Έτος": "Σύνολο",
+        "Μήνας": "",
+        "Συνολική Τιμή Κρατήσεων (€)": f"{monthly_table['Συνολική Τιμή Κρατήσεων (€)'].astype(float).sum():.2f}",
+        "Συνολικά Έξοδα (€)": f"{monthly_table['Συνολικά Έξοδα (€)'].astype(float).sum():.2f}",
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{monthly_table['Καθαρό Κέρδος Ιδιοκτήτη (€)'].astype(float).sum():.2f}"
+    }
+    monthly_table = pd.concat([monthly_table, pd.DataFrame([total_row])], ignore_index=True)
+    
 # ---------------- Display Metrics & Reservations ----------------
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
 if monthly_table.empty:
