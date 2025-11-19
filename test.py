@@ -291,7 +291,8 @@ if fetch_and_store:
         GITHUB_TOKEN,
         commit_message=f"Update reservations.xlsx from Streamlit ({today})"
     )
-    else:
+
+else:
     # ---------------- Load Excel reservations ----------------
     if os.path.exists(RESERVATIONS_FILE):
         df_excel = pd.read_excel(RESERVATIONS_FILE)
@@ -303,12 +304,9 @@ if fetch_and_store:
     else:
         df_excel = pd.DataFrame(columns=columns_to_keep)
 
-    # Ensure all required columns exist in the Excel dataframe
     for col in columns_to_keep:
         if col not in df_excel.columns:
             df_excel[col] = pd.NA
-
-    # Reorder to correct structure
     df_excel = df_excel[columns_to_keep]
 
     # ---------------- Fetch current month reservations ----------------
@@ -322,7 +320,6 @@ if fetch_and_store:
         to_date = yesterday.strftime("%Y-%m-%d")
 
         df_current_month = fetch_reservations_with_retry(from_date, to_date)
-
         if not df_current_month.empty:
             df_current_month["platform"] = df_current_month["platform"].astype(str)
             df_current_month["price"] = df_current_month.apply(
@@ -330,12 +327,9 @@ if fetch_and_store:
                 axis=1
             )
             df_current_month = calculate_columns(df_current_month)
-
-            # Ensure all columns exist
             for col in columns_to_keep:
                 if col not in df_current_month.columns:
                     df_current_month[col] = pd.NA
-
             df_current_month = df_current_month[columns_to_keep]
 
     # ---------------- Combine Excel + API ----------------
@@ -344,15 +338,89 @@ if fetch_and_store:
     else:
         combined_display = df_excel.copy()
 
-    # ---------------- Remove duplicates (keep latest/API version) ----------------
     if "booking_id" in combined_display.columns:
         combined_display = combined_display.drop_duplicates(subset=["booking_id"], keep="last")
 
-    # ---------------- Numeric cleanup ----------------
     for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
         if col in combined_display.columns:
             combined_display[col] = pd.to_numeric(combined_display[col], errors="coerce").round(2)
 
-    # Final reordered dataframe
     df_display_source = combined_display.reindex(columns=columns_to_keep)
+
+# ---------------- Sidebar Group ----------------
+selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
+if df_display_source.empty:
+    df_filtered = pd.DataFrame(columns=columns_to_keep)
+else:
+    df_filtered = df_display_source[df_display_source["apartment_id"].isin(APARTMENTS[selected_group])].copy()
+for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
+    if col in df_filtered.columns:
+        df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce").round(2)
+
+# ---------------- Metrics per month ----------------
+monthly_metrics = defaultdict(lambda: {"Total Price":0.0, "Total Expenses":0.0, "Owner Profit":0.0})
+
+for idx, row in df_filtered.iterrows():
+    try:
+        checkin = pd.to_datetime(row["arrival"])
+        checkout = pd.to_datetime(row["departure"])
+    except Exception:
+        continue
+    total_days = (checkout - checkin).days
+    if total_days <= 0:
+        continue
+    daily_price = float(row.get("Price Without Tax",0))/total_days
+    daily_profit = float(row.get("Owner Profit",0))/total_days
+    current_day = checkin
+    while current_day < checkout:
+        year, month = current_day.year, current_day.month
+        next_month_day = (current_day.replace(day=28) + timedelta(days=4)).replace(day=1)
+        days_in_month = (min(checkout, next_month_day) - current_day).days
+        monthly_metrics[(year,month)]["Total Price"] += daily_price * days_in_month
+        monthly_metrics[(year,month)]["Owner Profit"] += daily_profit * days_in_month
+        current_day = next_month_day
+
+# Add expenses
+for idx, row in expenses_df.iterrows():
+    if str(row.get("Accommodation","")).upper() != selected_group.upper():
+        continue
+    try:
+        key = (int(row["Year"]), int(row["Month"]))
+    except Exception:
+        continue
+    monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
+
+# Build monthly table
+months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
+             7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
+
+monthly_table = pd.DataFrame([
+    {
+        "Έτος": year,
+        "Μήνας": months_el[month],
+        "Συνολική Τιμή Κρατήσεων (€)": v["Total Price"],
+        "Συνολικά Έξοδα (€)": v["Total Expenses"],
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": v["Owner Profit"] - v["Total Expenses"]
+    }
+    for (year,month),v in sorted(monthly_metrics.items())
+])
+
+monthly_table = monthly_table[
+    (monthly_table["Έτος"]==today.year) &
+    (monthly_table["Μήνας"].map(lambda m: list(months_el.values()).index(m)+1) <= today.month)
+]
+
+if not monthly_table.empty:
+    for col in ["Συνολική Τιμή Κρατήσεων (€)","Συνολικά Έξοδα (€)","Καθαρό Κέρδος Ιδιοκτήτη (€)"]:
+        monthly_table[col] = monthly_table[col].map(lambda x: f"{x:.2f}")
+
+# ---------------- Display ----------------
+st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
+if monthly_table.empty:
+    st.info("Δεν υπάρχουν metrics για εμφάνιση.")
+else:
+    st.dataframe(monthly_table, use_container_width=True)
+
+st.subheader(f"📅 Κρατήσεις ({selected_group})")
+st.dataframe(df_filtered[columns_to_keep], use_container_width=True)
 
