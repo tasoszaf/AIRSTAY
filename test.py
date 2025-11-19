@@ -1,19 +1,18 @@
-# reservations_dashboard_mode.py
 import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import os
-from github import Github
 import time
+from github import Github
 
 # ---------------- Streamlit config ----------------
 st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
 
 # ---------------- Config / Paths ----------------
-API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"  
+API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
@@ -21,11 +20,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
-# ---------------- GitHub ----------------
+# ---------------- GitHub Config ----------------
 GITHUB_TOKEN = st.secrets["github"]["token"]
 GITHUB_USERNAME = st.secrets["github"]["username"]
-REPO_NAME = st.secrets["github"]["repo"]
-
+REPO_NAME = "AIRSTAY"
 
 # ---------------- Parameters ----------------
 START_MONTH = 1
@@ -97,10 +95,8 @@ def fetch_reservations(from_date, to_date):
         if params["page"] >= data.get("page_count", 1):
             break
         params["page"] += 1
-
     if not all_bookings:
         return pd.DataFrame()
-
     df = pd.json_normalize(all_bookings)
     df = df[df["type"] != "cancellation"]
     df = df.rename(columns={
@@ -140,7 +136,7 @@ def calculate_price_without_tax(row):
     group = get_group_by_apartment(apartment_id)
     if not group or nights == 0:
         return 0.0
-    winter_months = [1, 2, 3, 11, 12]
+    winter_months = [1,2,3,11,12]
     winter_base = APARTMENT_SETTINGS[group]["winter_base"]
     summer_base = APARTMENT_SETTINGS[group]["summer_base"]
     base = winter_base if month in winter_months else summer_base
@@ -176,12 +172,8 @@ def calculate_airstay_commission(row):
 def calculate_columns(df):
     if df.empty:
         return df
-    if "adults" not in df.columns:
-        df["adults"] = 0
-    if "children" not in df.columns:
-        df["children"] = 0
-    df["adults"] = pd.to_numeric(df["adults"], errors="coerce").fillna(0)
-    df["children"] = pd.to_numeric(df["children"], errors="coerce").fillna(0)
+    df["adults"] = pd.to_numeric(df.get("adults",0), errors="coerce").fillna(0)
+    df["children"] = pd.to_numeric(df.get("children",0), errors="coerce").fillna(0)
     df["Price Without Tax"] = df.apply(calculate_price_without_tax, axis=1)
     df["Booking Fee"] = df.apply(get_booking_fee, axis=1)
     df["Airstay Commission"] = df.apply(calculate_airstay_commission, axis=1)
@@ -189,47 +181,33 @@ def calculate_columns(df):
     df["Guests"] = df["adults"] + df["children"]
     return df
 
-# ---------------- Load expenses ----------------
-try:
-    expenses_df = pd.read_excel(EXPENSES_FILE)
-except FileNotFoundError:
-    expenses_df = pd.DataFrame(columns=["ID","Month","Year","Accommodation","Category","Amount","Description"])
-
 def parse_amount(v):
     try:
         return float(v)
     except:
         return 0.0
 
-# ---------------- GitHub Push ----------------
-def push_file_to_github(file_path, repo_name, github_username, github_token, commit_message="Update reservations.xlsx"):
+def push_file_to_github(file_path, repo_name, username, token, commit_message):
+    g = Github(token)
+    repo = g.get_user().get_repo(repo_name)
+    with open(file_path, "rb") as f:
+        content = f.read()
+    file_name = os.path.basename(file_path)
     try:
-        g = Github(github_token)
-        repo = g.get_user().get_repo(repo_name)
-        file_name = os.path.basename(file_path)
+        contents = repo.get_contents(file_name)
+        repo.update_file(contents.path, commit_message, content, contents.sha)
+    except:
+        repo.create_file(file_name, commit_message, content)
 
-        try:
-            contents = repo.get_contents(file_name)
-            repo.update_file(contents.path, commit_message, open(file_path, "rb").read(), contents.sha)
-            st.success(f"{file_name} updated on GitHub!")
-        except Exception:
-            repo.create_file(file_name, commit_message, open(file_path, "rb").read())
-            st.success(f"{file_name} created on GitHub!")
+# ---------------- Load or Fetch Reservations ----------------
+fetch_and_store = False  # True για fetch από API και αποθήκευση, False για φόρτωση από Excel
 
-    except Exception as e:
-        st.error(f"GitHub push failed: {e}")
-
-# ---------------- Mode ----------------
-fetch_and_store = False  # True ή False
-
-# ---------------- Columns ----------------
 columns_to_keep = [
     "booking_id", "apartment_id", "apartment_name", "platform",
     "guest_name", "arrival", "departure",
     "Guests", "price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit"
 ]
 
-# ---------------- Load or Fetch ----------------
 if fetch_and_store:
     all_dfs = []
     for month in range(START_MONTH, END_MONTH + 1):
@@ -241,6 +219,7 @@ if fetch_and_store:
         if df_month.empty:
             continue
         df_month["platform"] = df_month["platform"].astype(str)
+        # Διόρθωση expedia τιμών
         df_month["price"] = df_month.apply(
             lambda row: float(row["price"])/0.82 if "expedia" in str(row["platform"]).lower() else float(row["price"]),
             axis=1
@@ -254,36 +233,24 @@ if fetch_and_store:
             df_new[c] = pd.NA
     df_to_store = df_new[columns_to_keep].copy()
 
-    # ---------------- Load existing Excel safely ----------------
+    # Συνδυασμός με υπάρχον Excel
     if os.path.exists(RESERVATIONS_FILE):
-        try:
-            existing_df = pd.read_excel(RESERVATIONS_FILE)
-            if existing_df.empty:
-                existing_df = pd.DataFrame(columns=columns_to_keep)
-            else:
-                existing_cols = [c for c in existing_df.columns if c in columns_to_keep]
-                existing_df = existing_df[existing_cols]
-        except Exception as e:
-            st.warning(f"Δεν μπόρεσε να διαβαστεί το Excel, δημιουργείται νέο: {e}")
-            existing_df = pd.DataFrame(columns=columns_to_keep)
+        existing_df = pd.read_excel(RESERVATIONS_FILE)
+        existing_cols = [c for c in existing_df.columns if c in columns_to_keep]
+        if existing_cols:
+            existing_df = existing_df[existing_cols]
+        combined_df = pd.concat([existing_df, df_to_store], ignore_index=True, sort=False)
+        combined_df = combined_df.drop_duplicates(subset=["booking_id"], keep="first")
+        df_to_store_final = combined_df.reindex(columns=columns_to_keep)
     else:
-        existing_df = pd.DataFrame(columns=columns_to_keep)
-
-    # ---------------- Combine new + existing ----------------
-    combined_df = pd.concat([existing_df, df_to_store], ignore_index=True, sort=False)
-    combined_df = combined_df.drop_duplicates(subset=["booking_id"], keep="first")
-    df_to_store_final = combined_df.reindex(columns=columns_to_keep)
+        df_to_store_final = df_to_store
 
     for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
         if col in df_to_store_final.columns:
             df_to_store_final[col] = pd.to_numeric(df_to_store_final[col], errors="coerce").round(2)
 
-    # ---------------- Αποθήκευση στο Excel ----------------
+    # Αποθήκευση Excel και push στο GitHub
     df_to_store_final.to_excel(RESERVATIONS_FILE, index=False)
-    df_display_source = df_to_store_final.copy()
-    st.success(f"{RESERVATIONS_FILE} αποθηκεύτηκε τοπικά.")
-
-    # ---------------- Push στο GitHub ----------------
     push_file_to_github(
         RESERVATIONS_FILE,
         REPO_NAME,
@@ -292,79 +259,31 @@ if fetch_and_store:
         commit_message=f"Update reservations.xlsx from Streamlit ({today})"
     )
 
+    df_display_source = df_to_store_final.copy()
 else:
-    # ---------------- Load Excel reservations ----------------
     if os.path.exists(RESERVATIONS_FILE):
-        df_excel = pd.read_excel(RESERVATIONS_FILE)
-        if df_excel.empty:
-            df_excel = pd.DataFrame(columns=columns_to_keep)
-        else:
-            existing_cols = [c for c in df_excel.columns if c in columns_to_keep]
-            df_excel = df_excel[existing_cols]
+        df_display_source = pd.read_excel(RESERVATIONS_FILE)
     else:
-        df_excel = pd.DataFrame(columns=columns_to_keep)
+        df_display_source = pd.DataFrame(columns=columns_to_keep)
 
-    for col in columns_to_keep:
-        if col not in df_excel.columns:
-            df_excel[col] = pd.NA
-    df_excel = df_excel[columns_to_keep]
+# ---------------- Load Expenses ----------------
+try:
+    expenses_df = pd.read_excel(EXPENSES_FILE)
+except FileNotFoundError:
+    expenses_df = pd.DataFrame(columns=["ID","Month","Year","Accommodation","Category","Amount","Description"])
 
-    # ---------------- Fetch current month reservations ----------------
-    first_of_month = date(today.year, today.month, 1)
-    yesterday = today - timedelta(days=1)
-
-    if yesterday < first_of_month:
-        df_current_month = pd.DataFrame(columns=columns_to_keep)
-    else:
-        from_date = first_of_month.strftime("%Y-%m-%d")
-        to_date = yesterday.strftime("%Y-%m-%d")
-
-        df_current_month = fetch_reservations_with_retry(from_date, to_date)
-        if not df_current_month.empty:
-            df_current_month["platform"] = df_current_month["platform"].astype(str)
-            df_current_month["price"] = df_current_month.apply(
-                lambda row: float(row["price"]) / 0.82 if "expedia" in str(row["platform"]).lower() else float(row["price"]),
-                axis=1
-            )
-            df_current_month = calculate_columns(df_current_month)
-            for col in columns_to_keep:
-                if col not in df_current_month.columns:
-                    df_current_month[col] = pd.NA
-            df_current_month = df_current_month[columns_to_keep]
-
-    # ---------------- Combine Excel + API ----------------
-    if not df_current_month.empty:
-        combined_display = pd.concat([df_excel, df_current_month], ignore_index=True, sort=False)
-    else:
-        combined_display = df_excel.copy()
-
-    if "booking_id" in combined_display.columns:
-        combined_display = combined_display.drop_duplicates(subset=["booking_id"], keep="last")
-
-    for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
-        if col in combined_display.columns:
-            combined_display[col] = pd.to_numeric(combined_display[col], errors="coerce").round(2)
-
-    df_display_source = combined_display.reindex(columns=columns_to_keep)
-
-# ---------------- Sidebar Group ----------------
+# ---------------- Sidebar: Επιλογή Group ----------------
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-if df_display_source.empty:
-    df_filtered = pd.DataFrame(columns=columns_to_keep)
-else:
-    df_filtered = df_display_source[df_display_source["apartment_id"].isin(APARTMENTS[selected_group])].copy()
-for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
-    if col in df_filtered.columns:
-        df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce").round(2)
+df_filtered = df_display_source[df_display_source["apartment_id"].isin(APARTMENTS[selected_group])].copy()
 
-# ---------------- Metrics per month ----------------
+# ---------------- Metrics ανά μήνα ----------------
 monthly_metrics = defaultdict(lambda: {"Total Price":0.0, "Total Expenses":0.0, "Owner Profit":0.0})
 
 for idx, row in df_filtered.iterrows():
     try:
         checkin = pd.to_datetime(row["arrival"])
         checkout = pd.to_datetime(row["departure"])
-    except Exception:
+    except:
         continue
     total_days = (checkout - checkin).days
     if total_days <= 0:
@@ -380,17 +299,16 @@ for idx, row in df_filtered.iterrows():
         monthly_metrics[(year,month)]["Owner Profit"] += daily_profit * days_in_month
         current_day = next_month_day
 
-# Add expenses
+# Προσθήκη εξόδων
 for idx, row in expenses_df.iterrows():
     if str(row.get("Accommodation","")).upper() != selected_group.upper():
         continue
     try:
         key = (int(row["Year"]), int(row["Month"]))
-    except Exception:
+    except:
         continue
     monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
 
-# Build monthly table
 months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
              7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
 
@@ -410,11 +328,12 @@ monthly_table = monthly_table[
     (monthly_table["Μήνας"].map(lambda m: list(months_el.values()).index(m)+1) <= today.month)
 ]
 
-if not monthly_table.empty:
-    for col in ["Συνολική Τιμή Κρατήσεων (€)","Συνολικά Έξοδα (€)","Καθαρό Κέρδος Ιδιοκτήτη (€)"]:
+# Μορφοποίηση με 2 δεκαδικά
+for col in ["Συνολική Τιμή Κρατήσεων (€)","Συνολικά Έξοδα (€)","Καθαρό Κέρδος Ιδιοκτήτη (€)"]:
+    if not monthly_table.empty:
         monthly_table[col] = monthly_table[col].map(lambda x: f"{x:.2f}")
 
-# ---------------- Display ----------------
+# ---------------- Display Metrics & Reservations ----------------
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
 if monthly_table.empty:
     st.info("Δεν υπάρχουν metrics για εμφάνιση.")
@@ -422,10 +341,11 @@ else:
     st.dataframe(monthly_table, use_container_width=True)
 
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
-# ---- Section για τα έξοδα ----
+st.dataframe(df_filtered[columns_to_keep], use_container_width=True)
+
+# ---------------- Section Έξοδα ----------------
 st.subheader(f"💸 Έξοδα ({selected_group})")
 
-# Form για νέα έξοδα
 with st.form(f"add_expense_form_{selected_group}"):
     month = st.selectbox("Μήνας", list(range(1,13)))
     amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
@@ -447,7 +367,6 @@ with st.form(f"add_expense_form_{selected_group}"):
         expenses_df.to_excel(EXPENSES_FILE, index=False)
         st.success(f"Έξοδο προστέθηκε για {selected_group}!")
 
-        # Push στο GitHub
         push_file_to_github(
             EXPENSES_FILE,
             REPO_NAME,
@@ -456,8 +375,9 @@ with st.form(f"add_expense_form_{selected_group}"):
             commit_message=f"Update expenses.xlsx from Streamlit ({today})"
         )
 
-# Πίνακας με όλα τα έξοδα για το group
-df_group_expenses = expenses_df[expenses_df["Accommodation"] == selected_group]
+# Πίνακας με όλα τα έξοδα για το group με 2 δεκαδικά
+df_group_expenses = expenses_df[expenses_df["Accommodation"] == selected_group].copy()
+if not df_group_expenses.empty:
+    df_group_expenses["Amount"] = df_group_expenses["Amount"].apply(lambda x: f"{float(x):.2f}")
 st.dataframe(df_group_expenses, use_container_width=True)
-
 
