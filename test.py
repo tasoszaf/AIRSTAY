@@ -21,6 +21,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESERVATIONS_FILE = os.path.join(BASE_DIR, "reservations.xlsx")
 EXPENSES_FILE = os.path.join(BASE_DIR, "expenses.xlsx")
 
+# ---------------- GitHub ----------------
+GITHUB_TOKEN = st.secrets["github"]["token"]
+GITHUB_USERNAME = st.secrets["github"]["username"]
+REPO_NAME = st.secrets["github"]["repo"]
+
+
 # ---------------- Parameters ----------------
 START_MONTH = 1
 END_MONTH = 12
@@ -241,11 +247,25 @@ if fetch_and_store:
         df_to_store_final = combined_df.reindex(columns=columns_to_keep)
     else:
         df_to_store_final = df_to_store
+
     for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
         if col in df_to_store_final.columns:
             df_to_store_final[col] = pd.to_numeric(df_to_store_final[col], errors="coerce").round(2)
+
+    # ---------------- Αποθήκευση στο Excel ----------------
     df_to_store_final.to_excel(RESERVATIONS_FILE, index=False)
     df_display_source = df_to_store_final.copy()
+    st.success(f"{RESERVATIONS_FILE} αποθηκεύτηκε τοπικά.")
+
+    # ---------------- Push στο GitHub ----------------
+    push_file_to_github(
+        RESERVATIONS_FILE,
+        REPO_NAME,
+        GITHUB_USERNAME,
+        GITHUB_TOKEN,
+        commit_message=f"Update reservations.xlsx from Streamlit ({today})"
+    )
+
 else:
     # ---------------- Load Excel reservations ----------------
     if os.path.exists(RESERVATIONS_FILE):
