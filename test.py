@@ -248,12 +248,17 @@ if fetch_and_store:
     df_display_source = df_to_store_final.copy()
 else:
     if os.path.exists(RESERVATIONS_FILE):
+        # Διαβάζουμε όλο το Excel όπως είναι
         df_excel = pd.read_excel(RESERVATIONS_FILE)
-        cols_present = [c for c in df_excel.columns if c in columns_to_keep]
-        df_excel = df_excel[cols_present].copy()
+
+        # Προσθέτουμε μόνο τις στήλες που λείπουν
         for c in columns_to_keep:
             if c not in df_excel.columns:
-                df_excel[c] = pd.NA
+               df_excel[c] = pd.NA
+
+         # Τελικά κρατάμε το σωστό order στη μορφή που θέλουμε
+         df_excel = df_excel[columns_to_keep]
+ 
     else:
         df_excel = pd.DataFrame(columns=columns_to_keep)
     first_of_month = date(today.year, today.month, 1)
