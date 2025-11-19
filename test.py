@@ -422,5 +422,42 @@ else:
     st.dataframe(monthly_table, use_container_width=True)
 
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
-st.dataframe(df_filtered[columns_to_keep], use_container_width=True)
+# ---- Section για τα έξοδα ----
+st.subheader(f"💸 Έξοδα ({selected_group})")
+
+# Form για νέα έξοδα
+with st.form(f"add_expense_form_{selected_group}"):
+    month = st.selectbox("Μήνας", list(range(1,13)))
+    amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
+    category = st.text_input("Κατηγορία Έξοδου")
+    description = st.text_input("Περιγραφή")
+    submit = st.form_submit_button("Προσθήκη Έξοδου")
+
+    if submit:
+        new_expense = {
+            "ID": expenses_df["ID"].max() + 1 if not expenses_df.empty else 1,
+            "Month": month,
+            "Year": today.year,
+            "Accommodation": selected_group,
+            "Category": category,
+            "Amount": amount,
+            "Description": description
+        }
+        expenses_df = pd.concat([expenses_df, pd.DataFrame([new_expense])], ignore_index=True)
+        expenses_df.to_excel(EXPENSES_FILE, index=False)
+        st.success(f"Έξοδο προστέθηκε για {selected_group}!")
+
+        # Push στο GitHub
+        push_file_to_github(
+            EXPENSES_FILE,
+            REPO_NAME,
+            GITHUB_USERNAME,
+            GITHUB_TOKEN,
+            commit_message=f"Update expenses.xlsx from Streamlit ({today})"
+        )
+
+# Πίνακας με όλα τα έξοδα για το group
+df_group_expenses = expenses_df[expenses_df["Accommodation"] == selected_group]
+st.dataframe(df_group_expenses, use_container_width=True)
+
 
