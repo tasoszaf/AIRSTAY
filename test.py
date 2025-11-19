@@ -220,7 +220,7 @@ def push_file_to_github(file_path, repo_name, github_username, github_token, com
         st.error(f"GitHub push failed: {e}")
 
 # ---------------- Mode ----------------
-fetch_and_store = True  # True ή False
+fetch_and_store = False  # True ή False
 
 # ---------------- Columns ----------------
 columns_to_keep = [
