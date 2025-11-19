@@ -29,7 +29,7 @@ REPO_NAME = st.secrets["github"]["repo"]
 
 # ---------------- Parameters ----------------
 START_MONTH = 1
-END_MONTH = 12
+END_MONTH = 10
 today = date.today()
 
 # ---------------- Apartments & Settings ----------------
