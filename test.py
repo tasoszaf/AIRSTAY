@@ -369,7 +369,7 @@ for idx, row in df_filtered.iterrows():
     total_days = (checkout - checkin).days
     if total_days <= 0:
         continue
-    daily_price = float(row.get("Price Without Tax",0))/total_days
+    daily_price = float(row.get("price",0))/total_days
     daily_profit = float(row.get("Owner Profit",0))/total_days
     current_day = checkin
     while current_day < checkout:
