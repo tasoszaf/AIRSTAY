@@ -261,10 +261,24 @@ if fetch_and_store:
 
     df_display_source = df_to_store_final.copy()
 else:
+    # Φόρτωση υπάρχοντος Excel
     if os.path.exists(RESERVATIONS_FILE):
         df_display_source = pd.read_excel(RESERVATIONS_FILE)
     else:
         df_display_source = pd.DataFrame(columns=columns_to_keep)
+
+    # Fetch τρέχοντος μήνα μέχρι χθες
+    today_date = date.today()
+    first_day = today_date.replace(day=1)
+    yesterday = today_date - timedelta(days=1)
+    df_current_month = fetch_reservations_with_retry(first_day.strftime("%Y-%m-%d"),
+                                                     yesterday.strftime("%Y-%m-%d"))
+    if not df_current_month.empty:
+        df_current_month = calculate_columns(df_current_month)
+        # Προσθήκη στο υπάρχον
+        df_display_source = pd.concat([df_display_source, df_current_month], ignore_index=True)
+        df_display_source = df_display_source.drop_duplicates(subset=["booking_id"], keep="first")
+
 
 # ---------------- Load Expenses ----------------
 try:
