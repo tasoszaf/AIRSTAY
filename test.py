@@ -237,16 +237,27 @@ if fetch_and_store:
         if c not in df_new.columns:
             df_new[c] = pd.NA
     df_to_store = df_new[columns_to_keep].copy()
+
+    # ---------------- Load existing Excel safely ----------------
     if os.path.exists(RESERVATIONS_FILE):
-        existing_df = pd.read_excel(RESERVATIONS_FILE)
-        existing_cols = [c for c in existing_df.columns if c in columns_to_keep]
-        if existing_cols:
-            existing_df = existing_df[existing_cols]
-        combined_df = pd.concat([existing_df, df_to_store], ignore_index=True, sort=False)
-        combined_df = combined_df.drop_duplicates(subset=["booking_id"], keep="first")
-        df_to_store_final = combined_df.reindex(columns=columns_to_keep)
+        try:
+            existing_df = pd.read_excel(RESERVATIONS_FILE)
+            # Αν το Excel έχει μόνο τίτλους αλλά καμία γραμμή
+            if existing_df.empty:
+                existing_df = pd.DataFrame(columns=columns_to_keep)
+            else:
+                existing_cols = [c for c in existing_df.columns if c in columns_to_keep]
+                existing_df = existing_df[existing_cols]
+        except Exception as e:
+            st.warning(f"Δεν μπόρεσε να διαβαστεί το Excel, δημιουργείται νέο: {e}")
+            existing_df = pd.DataFrame(columns=columns_to_keep)
     else:
-        df_to_store_final = df_to_store
+        existing_df = pd.DataFrame(columns=columns_to_keep)
+
+    # ---------------- Combine new + existing ----------------
+    combined_df = pd.concat([existing_df, df_to_store], ignore_index=True, sort=False)
+    combined_df = combined_df.drop_duplicates(subset=["booking_id"], keep="first")
+    df_to_store_final = combined_df.reindex(columns=columns_to_keep)
 
     for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
         if col in df_to_store_final.columns:
@@ -265,6 +276,7 @@ if fetch_and_store:
         GITHUB_TOKEN,
         commit_message=f"Update reservations.xlsx from Streamlit ({today})"
     )
+
 
 else:
     # ---------------- Load Excel reservations ----------------
