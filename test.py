@@ -13,7 +13,7 @@ st.set_page_config(page_title="Smoobu Reservations Dashboard", layout="wide")
 st.title("Reservations Dashboard")
 
 # ---------------- Config / Paths ----------------
-API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"  # καλύτερα στο st.secrets
+API_KEY = "3MZqrgDd0OluEWaBywbhp7P9Zp8P2ACmVpX79rPc9R"  
 headers = {"Api-Key": API_KEY, "Content-Type": "application/json"}
 reservations_url = "https://login.smoobu.com/api/reservations"
 
@@ -102,9 +102,7 @@ def fetch_reservations(from_date, to_date):
         return pd.DataFrame()
 
     df = pd.json_normalize(all_bookings)
-    # ------------------- Αφαιρούμε τις ακυρωμένες -------------------
     df = df[df["type"] != "cancellation"]
-
     df = df.rename(columns={
         "id": "booking_id",
         "apartment.id": "apartment_id",
@@ -203,6 +201,24 @@ def parse_amount(v):
     except:
         return 0.0
 
+# ---------------- GitHub Push ----------------
+def push_file_to_github(file_path, repo_name, github_username, github_token, commit_message="Update reservations.xlsx"):
+    try:
+        g = Github(github_token)
+        repo = g.get_user().get_repo(repo_name)
+        file_name = os.path.basename(file_path)
+
+        try:
+            contents = repo.get_contents(file_name)
+            repo.update_file(contents.path, commit_message, open(file_path, "rb").read(), contents.sha)
+            st.success(f"{file_name} updated on GitHub!")
+        except Exception:
+            repo.create_file(file_name, commit_message, open(file_path, "rb").read())
+            st.success(f"{file_name} created on GitHub!")
+
+    except Exception as e:
+        st.error(f"GitHub push failed: {e}")
+
 # ---------------- Mode ----------------
 fetch_and_store = True  # True ή False
 
@@ -242,7 +258,6 @@ if fetch_and_store:
     if os.path.exists(RESERVATIONS_FILE):
         try:
             existing_df = pd.read_excel(RESERVATIONS_FILE)
-            # Αν το Excel έχει μόνο τίτλους αλλά καμία γραμμή
             if existing_df.empty:
                 existing_df = pd.DataFrame(columns=columns_to_keep)
             else:
@@ -276,12 +291,15 @@ if fetch_and_store:
         GITHUB_TOKEN,
         commit_message=f"Update reservations.xlsx from Streamlit ({today})"
     )
-
-
-else:
+    else:
     # ---------------- Load Excel reservations ----------------
     if os.path.exists(RESERVATIONS_FILE):
         df_excel = pd.read_excel(RESERVATIONS_FILE)
+        if df_excel.empty:
+            df_excel = pd.DataFrame(columns=columns_to_keep)
+        else:
+            existing_cols = [c for c in df_excel.columns if c in columns_to_keep]
+            df_excel = df_excel[existing_cols]
     else:
         df_excel = pd.DataFrame(columns=columns_to_keep)
 
@@ -298,7 +316,7 @@ else:
     yesterday = today - timedelta(days=1)
 
     if yesterday < first_of_month:
-        df_current_month = pd.DataFrame()
+        df_current_month = pd.DataFrame(columns=columns_to_keep)
     else:
         from_date = first_of_month.strftime("%Y-%m-%d")
         to_date = yesterday.strftime("%Y-%m-%d")
@@ -307,13 +325,10 @@ else:
 
         if not df_current_month.empty:
             df_current_month["platform"] = df_current_month["platform"].astype(str)
-
-            # Correct expedia prices
             df_current_month["price"] = df_current_month.apply(
                 lambda row: float(row["price"]) / 0.82 if "expedia" in str(row["platform"]).lower() else float(row["price"]),
                 axis=1
             )
-
             df_current_month = calculate_columns(df_current_month)
 
             # Ensure all columns exist
@@ -341,83 +356,3 @@ else:
     # Final reordered dataframe
     df_display_source = combined_display.reindex(columns=columns_to_keep)
 
-   
-
-# ---------------- Sidebar Group ----------------
-selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
-if df_display_source.empty:
-    df_filtered = pd.DataFrame(columns=columns_to_keep)
-else:
-    df_filtered = df_display_source[df_display_source["apartment_id"].isin(APARTMENTS[selected_group])].copy()
-for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
-    if col in df_filtered.columns:
-        df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce").round(2)
-
-# ---------------- Metrics per month ----------------
-monthly_metrics = defaultdict(lambda: {"Total Price":0.0, "Total Expenses":0.0, "Owner Profit":0.0})
-
-for idx, row in df_filtered.iterrows():
-    try:
-        checkin = pd.to_datetime(row["arrival"])
-        checkout = pd.to_datetime(row["departure"])
-    except Exception:
-        continue
-    total_days = (checkout - checkin).days
-    if total_days <= 0:
-        continue
-    daily_price = float(row.get("Price Without Tax",0))/total_days
-    daily_profit = float(row.get("Owner Profit",0))/total_days
-    current_day = checkin
-    while current_day < checkout:
-        year, month = current_day.year, current_day.month
-        next_month_day = (current_day.replace(day=28) + timedelta(days=4)).replace(day=1)
-        days_in_month = (min(checkout, next_month_day) - current_day).days
-        monthly_metrics[(year,month)]["Total Price"] += daily_price * days_in_month
-        monthly_metrics[(year,month)]["Owner Profit"] += daily_profit * days_in_month
-        current_day = next_month_day
-
-# Add expenses
-for idx, row in expenses_df.iterrows():
-    if str(row.get("Accommodation","")).upper() != selected_group.upper():
-        continue
-    try:
-        key = (int(row["Year"]), int(row["Month"]))
-    except Exception:
-        continue
-    monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
-
-# Build monthly table
-months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
-             7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
-
-monthly_table = pd.DataFrame([
-    {
-        "Έτος": year,
-        "Μήνας": months_el[month],
-        "Συνολική Τιμή Κρατήσεων (€)": v["Total Price"],
-        "Συνολικά Έξοδα (€)": v["Total Expenses"],
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": v["Owner Profit"] - v["Total Expenses"]
-    }
-    for (year,month),v in sorted(monthly_metrics.items())
-])
-
-# Filter only current year and months up to today
-monthly_table = monthly_table[
-    (monthly_table["Έτος"]==today.year) &
-    (monthly_table["Μήνας"].map(lambda m: list(months_el.values()).index(m)+1) <= today.month)
-]
-
-# Format numbers
-if not monthly_table.empty:
-    for col in ["Συνολική Τιμή Κρατήσεων (€)","Συνολικά Έξοδα (€)","Καθαρό Κέρδος Ιδιοκτήτη (€)"]:
-        monthly_table[col] = monthly_table[col].map(lambda x: f"{x:.2f}")
-
-# ---------------- Display ----------------
-st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
-if monthly_table.empty:
-    st.info("Δεν υπάρχουν metrics για εμφάνιση.")
-else:
-    st.dataframe(monthly_table, use_container_width=True)
-
-st.subheader(f"📅 Κρατήσεις ({selected_group})")
-st.dataframe(df_filtered[columns_to_keep], use_container_width=True)
