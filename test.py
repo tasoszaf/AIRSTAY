@@ -247,49 +247,69 @@ if fetch_and_store:
     df_to_store_final.to_excel(RESERVATIONS_FILE, index=False)
     df_display_source = df_to_store_final.copy()
 else:
+    # ---------------- Load Excel reservations ----------------
     if os.path.exists(RESERVATIONS_FILE):
-        # Διαβάζουμε όλο το Excel όπως είναι
         df_excel = pd.read_excel(RESERVATIONS_FILE)
-
-        # Προσθέτουμε μόνο τις στήλες που λείπουν
-        for c in columns_to_keep:
-            if c not in df_excel.columns:
-               df_excel[c] = pd.NA
-
-         # Τελικά κρατάμε το σωστό order στη μορφή που θέλουμε
-         df_excel = df_excel[columns_to_keep]
- 
     else:
         df_excel = pd.DataFrame(columns=columns_to_keep)
+
+    # Ensure all required columns exist in the Excel dataframe
+    for col in columns_to_keep:
+        if col not in df_excel.columns:
+            df_excel[col] = pd.NA
+
+    # Reorder to correct structure
+    df_excel = df_excel[columns_to_keep]
+
+    # ---------------- Fetch current month reservations ----------------
     first_of_month = date(today.year, today.month, 1)
     yesterday = today - timedelta(days=1)
+
     if yesterday < first_of_month:
         df_current_month = pd.DataFrame()
     else:
         from_date = first_of_month.strftime("%Y-%m-%d")
         to_date = yesterday.strftime("%Y-%m-%d")
+
         df_current_month = fetch_reservations_with_retry(from_date, to_date)
+
         if not df_current_month.empty:
             df_current_month["platform"] = df_current_month["platform"].astype(str)
+
+            # Correct expedia prices
             df_current_month["price"] = df_current_month.apply(
-                lambda row: float(row["price"])/0.82 if "expedia" in str(row["platform"]).lower() else float(row["price"]),
+                lambda row: float(row["price"]) / 0.82 if "expedia" in str(row["platform"]).lower() else float(row["price"]),
                 axis=1
             )
+
             df_current_month = calculate_columns(df_current_month)
-            for c in columns_to_keep:
-                if c not in df_current_month.columns:
-                    df_current_month[c] = pd.NA
+
+            # Ensure all columns exist
+            for col in columns_to_keep:
+                if col not in df_current_month.columns:
+                    df_current_month[col] = pd.NA
+
             df_current_month = df_current_month[columns_to_keep]
-    if df_current_month is not None and not df_current_month.empty:
+
+    # ---------------- Combine Excel + API ----------------
+    if not df_current_month.empty:
         combined_display = pd.concat([df_excel, df_current_month], ignore_index=True, sort=False)
     else:
         combined_display = df_excel.copy()
+
+    # ---------------- Remove duplicates (keep latest/API version) ----------------
     if "booking_id" in combined_display.columns:
-        combined_display = combined_display.drop_duplicates(subset=["booking_id"], keep="first")
+        combined_display = combined_display.drop_duplicates(subset=["booking_id"], keep="last")
+
+    # ---------------- Numeric cleanup ----------------
     for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
         if col in combined_display.columns:
             combined_display[col] = pd.to_numeric(combined_display[col], errors="coerce").round(2)
+
+    # Final reordered dataframe
     df_display_source = combined_display.reindex(columns=columns_to_keep)
+
+   
 
 # ---------------- Sidebar Group ----------------
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
