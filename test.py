@@ -414,3 +414,45 @@ df_group_expenses = expenses_df[expenses_df["Accommodation"] == selected_group].
 if not df_group_expenses.empty:
     df_group_expenses["Amount"] = df_group_expenses["Amount"].apply(lambda x: f"{float(x):.2f}")
 st.dataframe(df_group_expenses, use_container_width=True)
+
+# ---------------- Γράφημα Metrics ----------------
+import plotly.express as px
+import pandas as pd
+
+# Φιλτράρουμε τη γραμμή "Σύνολο"
+df_plot = monthly_table[monthly_table["Έτος"] != "Σύνολο"].copy()
+if not df_plot.empty:
+    # Μετατροπή σε float
+    for col in ["Συνολική Τιμή Κρατήσεων (€)", 
+                "Καθαρό Κέρδος Ιδιοκτήτη (€)", 
+                "Συνολικά Έσοδα Airstay (€)",
+                "Συνολικά Έξοδα (€)"]:
+        df_plot[col] = df_plot[col].astype(float)
+    
+    # Ορισμός σωστής χρονολογικής σειράς μηνών
+    months_order = ["Ιανουάριος","Φεβρουάριος","Μάρτιος","Απρίλιος","Μάιος","Ιούνιος",
+                    "Ιούλιος","Αύγουστος","Σεπτέμβριος","Οκτώβριος","Νοέμβριος","Δεκέμβριος"]
+    df_plot["Μήνας"] = pd.Categorical(df_plot["Μήνας"], categories=months_order, ordered=True)
+    df_plot = df_plot.sort_values("Μήνας")
+    
+    # Δημιουργία γραφήματος
+    fig = px.line(
+        df_plot,
+        x="Μήνας",
+        y=["Συνολική Τιμή Κρατήσεων (€)", 
+           "Καθαρό Κέρδος Ιδιοκτήτη (€)", 
+           "Συνολικά Έσοδα Airstay (€)",
+           "Συνολικά Έξοδα (€)"],
+        markers=True,
+        title=f"Metrics & Έξοδα ανά μήνα ({selected_group})",
+        labels={"value": "€", "variable": "Metric"}
+    )
+
+    fig.update_layout(
+        legend_title_text="Metrics",
+        xaxis_title="Μήνας",
+        yaxis_title="€",
+        template="plotly_white"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
