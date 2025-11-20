@@ -444,7 +444,7 @@ if not df_plot.empty:
            "Συνολικά Έσοδα Airstay (€)",
            "Συνολικά Έξοδα (€)"],
         markers=True,
-        title=f"Metrics & Έξοδα ανά μήνα ({selected_group})",
+        title=f"Metrics ανά μήνα ({selected_group})",
         labels={"value": "€", "variable": "Metric"}
     )
 
