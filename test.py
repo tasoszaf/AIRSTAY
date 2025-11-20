@@ -417,17 +417,16 @@ st.dataframe(df_group_expenses, use_container_width=True)
 
 # ---------------- Γράφημα Metrics ----------------
 import plotly.express as px
-import pandas as pd
 
 # Φιλτράρουμε τη γραμμή "Σύνολο"
 df_plot = monthly_table[monthly_table["Έτος"] != "Σύνολο"].copy()
 if not df_plot.empty:
-    # Μετατροπή σε float
+    # Μετατροπή σε float και στρογγυλοποίηση στα 2 δεκαδικά
     for col in ["Συνολική Τιμή Κρατήσεων (€)", 
                 "Καθαρό Κέρδος Ιδιοκτήτη (€)", 
                 "Συνολικά Έσοδα Airstay (€)",
                 "Συνολικά Έξοδα (€)"]:
-        df_plot[col] = df_plot[col].astype(float)
+        df_plot[col] = df_plot[col].astype(float).round(2)
     
     # Ορισμός σωστής χρονολογικής σειράς μηνών
     months_order = ["Ιανουάριος","Φεβρουάριος","Μάρτιος","Απρίλιος","Μάιος","Ιούνιος",
@@ -448,6 +447,9 @@ if not df_plot.empty:
         labels={"value": "€", "variable": "Metric"}
     )
 
+    # Εμφάνιση τιμών με 2 δεκαδικά στο hover
+    fig.update_traces(hovertemplate='%{y:.2f} €')
+
     fig.update_layout(
         legend_title_text="Metrics",
         xaxis_title="Μήνας",
@@ -455,4 +457,7 @@ if not df_plot.empty:
         template="plotly_white"
     )
 
+    # Εμφάνιση γραφήματος στο Streamlit κάτω από τα έξοδα
+    st.subheader(f"📈 Γράφημα Metrics & Έξοδα ({selected_group})")
     st.plotly_chart(fig, use_container_width=True)
+
