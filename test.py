@@ -291,7 +291,12 @@ selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()
 df_filtered = df_display_source[df_display_source["apartment_id"].isin(APARTMENTS[selected_group])].copy()
 
 # ---------------- Metrics ανά μήνα ----------------
-monthly_metrics = defaultdict(lambda: {"Total Price":0.0, "Total Expenses":0.0, "Owner Profit":0.0})
+monthly_metrics = defaultdict(lambda: {
+    "Total Price":0.0,
+    "Total Expenses":0.0,
+    "Owner Profit":0.0,
+    "Airstay Commission":0.0
+})
 
 for idx, row in df_filtered.iterrows():
     try:
@@ -304,6 +309,7 @@ for idx, row in df_filtered.iterrows():
         continue
     daily_price = float(row.get("price",0))/total_days
     daily_profit = float(row.get("Owner Profit",0))/total_days
+    daily_airstay = float(row.get("Airstay Commission",0))/total_days
     current_day = checkin
     while current_day < checkout:
         year, month = current_day.year, current_day.month
@@ -311,9 +317,9 @@ for idx, row in df_filtered.iterrows():
         days_in_month = (min(checkout, next_month_day) - current_day).days
         monthly_metrics[(year,month)]["Total Price"] += daily_price * days_in_month
         monthly_metrics[(year,month)]["Owner Profit"] += daily_profit * days_in_month
+        monthly_metrics[(year,month)]["Airstay Commission"] += daily_airstay * days_in_month
         current_day = next_month_day
 
-# Προσθήκη εξόδων
 for idx, row in expenses_df.iterrows():
     if str(row.get("Accommodation","")).upper() != selected_group.upper():
         continue
@@ -332,32 +338,36 @@ monthly_table = pd.DataFrame([
         "Μήνας": months_el[month],
         "Συνολική Τιμή Κρατήσεων (€)": v["Total Price"],
         "Συνολικά Έξοδα (€)": v["Total Expenses"],
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": v["Owner Profit"] - v["Total Expenses"]
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": v["Owner Profit"] - v["Total Expenses"],
+        "Συνολικά Έσοδα Airstay (€)": v["Airstay Commission"]
     }
     for (year,month),v in sorted(monthly_metrics.items())
 ])
 
 monthly_table = monthly_table[
-    (monthly_table["Έτος"]==today.year) &
-    (monthly_table["Μήνας"].map(lambda m: list(months_el.values()).index(m)+1) <= today.month)
+    ((monthly_table["Καθαρό Κέρδος Ιδιοκτήτη (€)"] + monthly_table["Συνολικά Έσοδα Airstay (€)"]) != 0)
+    & (monthly_table["Έτος"]==today.year)
+    & (monthly_table["Μήνας"].map(lambda m: list(months_el.values()).index(m)+1) <= today.month)
 ]
 
-# Μορφοποίηση με 2 δεκαδικά
-for col in ["Συνολική Τιμή Κρατήσεων (€)","Συνολικά Έξοδα (€)","Καθαρό Κέρδος Ιδιοκτήτη (€)"]:
+for col in ["Συνολική Τιμή Κρατήσεων (€)",
+            "Συνολικά Έξοδα (€)",
+            "Καθαρό Κέρδος Ιδιοκτήτη (€)",
+            "Συνολικά Έσοδα Airstay (€)"]:
     if not monthly_table.empty:
         monthly_table[col] = monthly_table[col].map(lambda x: f"{x:.2f}")
-        
-# Προσθήκη συνολικών στο τέλος του πίνακα
+
 if not monthly_table.empty:
     total_row = {
         "Έτος": "Σύνολο",
         "Μήνας": "",
         "Συνολική Τιμή Κρατήσεων (€)": f"{monthly_table['Συνολική Τιμή Κρατήσεων (€)'].astype(float).sum():.2f}",
         "Συνολικά Έξοδα (€)": f"{monthly_table['Συνολικά Έξοδα (€)'].astype(float).sum():.2f}",
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{monthly_table['Καθαρό Κέρδος Ιδιοκτήτη (€)'].astype(float).sum():.2f}"
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{monthly_table['Καθαρό Κέρδος Ιδιοκτήτη (€)'].astype(float).sum():.2f}",
+        "Συνολικά Έσοδα Airstay (€)": f"{monthly_table['Συνολικά Έσοδα Airstay (€)'].astype(float).sum():.2f}"
     }
     monthly_table = pd.concat([monthly_table, pd.DataFrame([total_row])], ignore_index=True)
-    
+
 # ---------------- Display Metrics & Reservations ----------------
 st.subheader(f"📊 Metrics ανά μήνα ({selected_group})")
 if monthly_table.empty:
@@ -400,9 +410,7 @@ with st.form(f"add_expense_form_{selected_group}"):
             commit_message=f"Update expenses.xlsx from Streamlit ({today})"
         )
 
-# Πίνακας με όλα τα έξοδα για το group με 2 δεκαδικά
 df_group_expenses = expenses_df[expenses_df["Accommodation"] == selected_group].copy()
 if not df_group_expenses.empty:
     df_group_expenses["Amount"] = df_group_expenses["Amount"].apply(lambda x: f"{float(x):.2f}")
 st.dataframe(df_group_expenses, use_container_width=True)
-
