@@ -458,6 +458,6 @@ if not df_plot.empty:
     )
 
     # Εμφάνιση γραφήματος στο Streamlit κάτω από τα έξοδα
-    st.subheader(f"📈 Γράφημα Metrics & Έξοδα ({selected_group})")
+    st.subheader(f"📈 Γράφημα ({selected_group})")
     st.plotly_chart(fig, use_container_width=True)
 
