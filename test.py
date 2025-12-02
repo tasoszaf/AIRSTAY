@@ -470,7 +470,7 @@ if not df_plot.empty:
     for col in ["Συνολική Τιμή Κρατήσεων (€)", 
                 "Καθαρό Κέρδος Ιδιοκτήτη (€)", 
                 "Συνολικά Έσοδα Airstay (€)",
-                "Συνολικά Έξοδα (€)": ]:
+                "Συνολικά Έξοδα (€)"]:
         df_plot[col] = df_plot[col].astype(float).round(2)
     
     # Ορισμός σωστής χρονολογικής σειράς μηνών
@@ -491,17 +491,3 @@ if not df_plot.empty:
         title=f"Metrics ανά μήνα",
         labels={"value": "€", "variable": "Metric"}
     )
-
-    # Εμφάνιση τιμών με 2 δεκαδικά στο hover
-    fig.update_traces(hovertemplate='%{y:.2f} €')
-
-    fig.update_layout(
-        legend_title_text="Metrics",
-        xaxis_title="Μήνας",
-        yaxis_title="€",
-        template="plotly_white"
-    )
-
-    # Εμφάνιση γραφήματος στο Streamlit κάτω από τα έξοδα
-    st.subheader(f"📈 Γράφημα ({selected_group})")
-    st.plotly_chart(fig, use_container_width=True)
