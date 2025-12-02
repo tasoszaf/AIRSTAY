@@ -73,6 +73,14 @@ APARTMENT_SETTINGS = {
 }
 
 # ---------------- Helper functions ----------------
+def to2(v):
+    """Return numeric value rounded to 2 decimals. Always returns float."""
+    try:
+        return round(float(v), 2)
+    except:
+        return 0.00
+
+
 def fetch_reservations(from_date, to_date):
     params = {
         "from": from_date,
@@ -110,7 +118,13 @@ def fetch_reservations(from_date, to_date):
         "price": "price"
     })
     df = df[df.get("is-blocked-booking", False) == False]
+
+    # Ensure price is numeric and rounded
+    if "price" in df.columns:
+        df["price"] = pd.to_numeric(df["price"], errors="coerce").fillna(0).apply(to2)
+
     return df
+
 
 def fetch_reservations_with_retry(from_date, to_date, retries=3, delay=5):
     for attempt in range(retries):
@@ -120,14 +134,16 @@ def fetch_reservations_with_retry(from_date, to_date, retries=3, delay=5):
         time.sleep(delay)
     return pd.DataFrame()
 
+
 def get_group_by_apartment(apt_id):
     for g, apt_list in APARTMENTS.items():
         if apt_id in apt_list:
             return g
     return None
 
+
 def calculate_price_without_tax(row):
-    price = float(row.get("price", 0) or 0)
+    price = to2(row.get("price", 0) or 0)
     arrival = pd.to_datetime(row.get("arrival"))
     departure = pd.to_datetime(row.get("departure"))
     nights = (departure - arrival).days
@@ -135,39 +151,42 @@ def calculate_price_without_tax(row):
     apartment_id = row.get("apartment_id")
     group = get_group_by_apartment(apartment_id)
     if not group or nights == 0:
-        return 0.0
+        return to2(0.0)
     winter_months = [1,2,3,11,12]
     winter_base = APARTMENT_SETTINGS[group]["winter_base"]
     summer_base = APARTMENT_SETTINGS[group]["summer_base"]
     base = winter_base if month in winter_months else summer_base
     net_price = price - (base * nights)
-    return (net_price / 1.13) - (net_price * 0.005)
+    return to2((net_price / 1.13) - (net_price * 0.005))
+
 
 def get_booking_fee(row):
     platform = str(row.get("platform", "")).lower()
-    total = float(row.get("price", 0) or 0)
+    total = to2(row.get("price", 0) or 0)
     apartment_id = row.get("apartment_id")
     group = get_group_by_apartment(apartment_id)
     if not group:
-        return 0.0
+        return to2(0.0)
     settings = APARTMENT_SETTINGS[group]
     if "booking.com" in platform:
-        return total * settings.get("booking_fee", 0.166)
+        return to2(total * settings.get("booking_fee", 0.166))
     elif "airbnb" in platform:
-        return total * 0.15
+        return to2(total * 0.15)
     elif "expedia" in platform:
-        return total * 0.18
+        return to2(total * 0.18)
     else:
-        return total * settings.get("booking_fee_other", 0.0)
+        return to2(total * settings.get("booking_fee_other", 0.0))
+
 
 def calculate_airstay_commission(row):
-    price_without_tax = row.get("Price Without Tax", 0) or 0
+    price_without_tax = to2(row.get("Price Without Tax", 0) or 0)
     apartment_id = row.get("apartment_id")
     group = get_group_by_apartment(apartment_id)
     if not group:
-        return 0.0
+        return to2(0.0)
     rate = APARTMENT_SETTINGS[group].get("airstay_commission", 0.0)
-    return price_without_tax * rate
+    return to2(price_without_tax * rate)
+
 
 def calculate_columns(df):
     if df.empty:
@@ -177,15 +196,23 @@ def calculate_columns(df):
     df["Price Without Tax"] = df.apply(calculate_price_without_tax, axis=1)
     df["Booking Fee"] = df.apply(get_booking_fee, axis=1)
     df["Airstay Commission"] = df.apply(calculate_airstay_commission, axis=1)
-    df["Owner Profit"] = df["Price Without Tax"] - df["Booking Fee"] - df["Airstay Commission"]
+    # Calculate Owner Profit and ensure rounding
+    df["Owner Profit"] = (df["Price Without Tax"] - df["Booking Fee"] - df["Airstay Commission"]).apply(to2)
+    df["Price Without Tax"] = df["Price Without Tax"].apply(to2)
+    df["Booking Fee"] = df["Booking Fee"].apply(to2)
+    df["Airstay Commission"] = df["Airstay Commission"].apply(to2)
     df["Guests"] = df["adults"] + df["children"]
+    # Ensure Guests is numeric (no rounding) but keep two decimals for consistency when saved
+    df["Guests"] = pd.to_numeric(df["Guests"], errors="coerce").fillna(0)
     return df
+
 
 def parse_amount(v):
     try:
         return float(v)
     except:
         return 0.0
+
 
 def push_file_to_github(file_path, repo_name, username, token, commit_message):
     g = Github(token)
@@ -221,7 +248,7 @@ if fetch_and_store:
         df_month["platform"] = df_month["platform"].astype(str)
         # Διόρθωση expedia τιμών
         df_month["price"] = df_month.apply(
-            lambda row: float(row["price"])/0.82 if "expedia" in str(row["platform"]).lower() else float(row["price"]),
+            lambda row: to2(float(row["price"])/0.82) if "expedia" in str(row["platform"]).lower() else to2(float(row["price"])),
             axis=1
         )
         df_month = calculate_columns(df_month)
@@ -245,9 +272,10 @@ if fetch_and_store:
     else:
         df_to_store_final = df_to_store
 
+    # Ensure numeric columns have 2 decimals
     for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
         if col in df_to_store_final.columns:
-            df_to_store_final[col] = pd.to_numeric(df_to_store_final[col], errors="coerce").round(2)
+            df_to_store_final[col] = pd.to_numeric(df_to_store_final[col], errors="coerce").fillna(0).apply(to2)
 
     # Αποθήκευση Excel και push στο GitHub
     df_to_store_final.to_excel(RESERVATIONS_FILE, index=False)
@@ -286,12 +314,15 @@ try:
 except FileNotFoundError:
     expenses_df = pd.DataFrame(columns=["ID","Month","Year","Accommodation","Category","Amount","Description"])
 
+# Ensure expenses amounts are numeric with 2 decimals
+if not expenses_df.empty and "Amount" in expenses_df.columns:
+    expenses_df["Amount"] = pd.to_numeric(expenses_df["Amount"], errors="coerce").fillna(0).apply(to2)
+
 # ---------------- Sidebar: Επιλογή Group ----------------
 selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
 df_filtered = df_display_source[df_display_source["apartment_id"].isin(APARTMENTS[selected_group])].copy()
 
-# ---------------- Metrics ανά μήνα ----------------
-monthly_metrics = defaultdict(lambda: {
+# ---------------- Metrics ανά μήνα ----------------nmonthly_metrics = defaultdict(lambda: {
     "Total Price":0.0,
     "Total Expenses":0.0,
     "Owner Profit":0.0,
@@ -329,6 +360,11 @@ for idx, row in expenses_df.iterrows():
         continue
     monthly_metrics[key]["Total Expenses"] += parse_amount(row["Amount"])
 
+# Apply rounding to monthly metrics
+for key in list(monthly_metrics.keys()):
+    for k2 in ["Total Price", "Total Expenses", "Owner Profit", "Airstay Commission"]:
+        monthly_metrics[key][k2] = to2(monthly_metrics[key][k2])
+
 months_el = {1:"Ιανουάριος",2:"Φεβρουάριος",3:"Μάρτιος",4:"Απρίλιος",5:"Μάιος",6:"Ιούνιος",
              7:"Ιούλιος",8:"Αύγουστος",9:"Σεπτέμβριος",10:"Οκτώβριος",11:"Νοέμβριος",12:"Δεκέμβριος"}
 
@@ -355,16 +391,16 @@ for col in ["Συνολική Τιμή Κρατήσεων (€)",
             "Καθαρό Κέρδος Ιδιοκτήτη (€)",
             "Συνολικά Έσοδα Airstay (€)"]:
     if not monthly_table.empty:
-        monthly_table[col] = monthly_table[col].map(lambda x: f"{x:.2f}")
+        monthly_table[col] = monthly_table[col].map(lambda x: f"{to2(x):.2f}")
 
 if not monthly_table.empty:
     total_row = {
         "Έτος": "Σύνολο",
         "Μήνας": "",
-        "Συνολική Τιμή Κρατήσεων (€)": f"{monthly_table['Συνολική Τιμή Κρατήσεων (€)'].astype(float).sum():.2f}",
-        "Συνολικά Έξοδα (€)": f"{monthly_table['Συνολικά Έξοδα (€)'].astype(float).sum():.2f}",
-        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{monthly_table['Καθαρό Κέρδος Ιδιοκτήτη (€)'].astype(float).sum():.2f}",
-        "Συνολικά Έσοδα Airstay (€)": f"{monthly_table['Συνολικά Έσοδα Airstay (€)'].astype(float).sum():.2f}"
+        "Συνολική Τιμή Κρατήσεων (€)": f"{to2(monthly_table['Συνολική Τιμή Κρατήσεων (€)'].astype(float).sum()):.2f}",
+        "Συνολικά Έξοδα (€)": f"{to2(monthly_table['Συνολικά Έξοδα (€)'].astype(float).sum()):.2f}",
+        "Καθαρό Κέρδος Ιδιοκτήτη (€)": f"{to2(monthly_table['Καθαρό Κέρδος Ιδιοκτήτη (€)'].astype(float).sum()):.2f}",
+        "Συνολικά Έσοδα Airstay (€)": f"{to2(monthly_table['Συνολικά Έσοδα Airstay (€)'].astype(float).sum()):.2f}"
     }
     monthly_table = pd.concat([monthly_table, pd.DataFrame([total_row])], ignore_index=True)
 
@@ -376,6 +412,11 @@ else:
     st.dataframe(monthly_table, use_container_width=True)
 
 st.subheader(f"📅 Κρατήσεις ({selected_group})")
+# Ensure display columns numeric formatting
+if not df_filtered.empty:
+    for col in ["price", "Price Without Tax", "Booking Fee", "Airstay Commission", "Owner Profit", "Guests"]:
+        if col in df_filtered.columns:
+            df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce").fillna(0).apply(to2)
 st.dataframe(df_filtered[columns_to_keep], use_container_width=True)
 
 # ---------------- Section Έξοδα ----------------
@@ -390,15 +431,17 @@ with st.form(f"add_expense_form_{selected_group}"):
 
     if submit:
         new_expense = {
-            "ID": expenses_df["ID"].max() + 1 if not expenses_df.empty else 1,
-            "Month": month,
+            "ID": int(expenses_df["ID"].max() + 1) if not expenses_df.empty else 1,
+            "Month": int(month),
             "Year": today.year,
             "Accommodation": selected_group,
             "Category": category,
-            "Amount": amount,
+            "Amount": to2(amount),
             "Description": description
         }
         expenses_df = pd.concat([expenses_df, pd.DataFrame([new_expense])], ignore_index=True)
+        # Ensure Amount column formatting before saving
+        expenses_df["Amount"] = pd.to_numeric(expenses_df["Amount"], errors="coerce").fillna(0).apply(to2)
         expenses_df.to_excel(EXPENSES_FILE, index=False)
         st.success(f"Έξοδο προστέθηκε για {selected_group}!")
 
@@ -410,9 +453,10 @@ with st.form(f"add_expense_form_{selected_group}"):
             commit_message=f"Update expenses.xlsx from Streamlit ({today})"
         )
 
+# Prepare group expenses for display
 df_group_expenses = expenses_df[expenses_df["Accommodation"] == selected_group].copy()
 if not df_group_expenses.empty:
-    df_group_expenses["Amount"] = df_group_expenses["Amount"].apply(lambda x: f"{float(x):.2f}")
+    df_group_expenses["Amount"] = pd.to_numeric(df_group_expenses["Amount"], errors="coerce").fillna(0).apply(to2).map(lambda x: f"{x:.2f}")
 st.dataframe(df_group_expenses, use_container_width=True)
 
 # ---------------- Γράφημα Metrics ----------------
@@ -425,7 +469,7 @@ if not df_plot.empty:
     for col in ["Συνολική Τιμή Κρατήσεων (€)", 
                 "Καθαρό Κέρδος Ιδιοκτήτη (€)", 
                 "Συνολικά Έσοδα Airstay (€)",
-                "Συνολικά Έξοδα (€)"]:
+                "Συνολικά Έξοδα (€)": ]:
         df_plot[col] = df_plot[col].astype(float).round(2)
     
     # Ορισμός σωστής χρονολογικής σειράς μηνών
@@ -460,4 +504,3 @@ if not df_plot.empty:
     # Εμφάνιση γραφήματος στο Streamlit κάτω από τα έξοδα
     st.subheader(f"📈 Γράφημα ({selected_group})")
     st.plotly_chart(fig, use_container_width=True)
-
