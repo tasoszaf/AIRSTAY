@@ -298,7 +298,7 @@ else:
     selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()))
     lock_group = False
 if lock_group:
-    st.sidebar.markdown(f"**Group locked via URL:** {selected_group}")
+    st.sidebar.markdown(f"**Group locked** {selected_group}")
 
 df_filtered = df_display_source[df_display_source["apartment_id"].isin(APARTMENTS[selected_group])].copy()
 
