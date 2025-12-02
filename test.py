@@ -323,7 +323,7 @@ selected_group = st.sidebar.selectbox("Κατάλυμα", list(APARTMENTS.keys()
 df_filtered = df_display_source[df_display_source["apartment_id"].isin(APARTMENTS[selected_group])].copy()
 
 # ---------------- Metrics ανά μήνα ----------------nmonthly_metrics = defaultdict(lambda: {
-    "Total Price":0.0,
+        "Total Price": 0.0,
     "Total Expenses":0.0,
     "Owner Profit":0.0,
     "Airstay Commission":0.0
