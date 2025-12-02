@@ -447,4 +447,5 @@ if not df_plot.empty:
         title=f"Metrics ανά μήνα",
         labels={"value": "€", "variable": "Metric"}
     )
+    fig.update_yaxes(tickformat=".2f")
     st.plotly_chart(fig, use_container_width=True)
