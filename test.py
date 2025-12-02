@@ -227,7 +227,7 @@ def push_file_to_github(file_path, repo_name, username, token, commit_message):
         repo.create_file(file_name, commit_message, content)
 
 # ---------------- Load or Fetch Reservations ----------------
-fetch_and_store = True  # True για fetch από API και αποθήκευση, False για φόρτωση από Excel
+fetch_and_store = False  # True για fetch από API και αποθήκευση, False για φόρτωση από Excel
 
 columns_to_keep = [
     "booking_id", "apartment_id", "apartment_name", "platform",
