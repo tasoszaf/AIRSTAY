@@ -395,7 +395,6 @@ st.subheader(f"💸 Έξοδα ({selected_group})")
 with st.form(f"add_expense_form_{selected_group}"):
     month = st.selectbox("Μήνας", list(range(1,13)))
     amount = st.number_input("Ποσό (€)", min_value=0.0, format="%.2f")
-    category = st.text_input("Κατηγορία Έξοδου")
     description = st.text_input("Περιγραφή")
     submit = st.form_submit_button("Προσθήκη Έξοδου", disabled=lock_group)
     if submit:
@@ -404,7 +403,6 @@ with st.form(f"add_expense_form_{selected_group}"):
             "Month": int(month),
             "Year": today.year,
             "Accommodation": selected_group,
-            "Category": category,
             "Amount": to2(amount),
             "Description": description
         }
